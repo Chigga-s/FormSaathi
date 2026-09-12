@@ -6,7 +6,9 @@ import com.formsaathi.contracts.FakeCompletedPdfGenerator
 import com.formsaathi.contracts.FakeFormParser
 import com.formsaathi.contracts.FakeQuestionProvider
 import com.formsaathi.contracts.FakeVoiceService
+import com.formsaathi.contracts.FormParser
 import com.formsaathi.model.AnswerSource
+import com.formsaathi.model.ParsedForm
 import com.formsaathi.model.SupportedLanguage
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -209,5 +211,59 @@ class FormSaathiCoordinatorTest {
 
         reviewState = coordinator.uiState.value as FormUiState.Reviewing
         assertNull("Copied current address should be removed when same-as becomes no", reviewState.answers["field_current_address"])
+    }
+
+    @Test
+    fun testParseTimeoutTransitionsToRecoverableError() = runBlocking {
+        val delayedParser = object : FormParser {
+            override suspend fun parse(uri: Uri): ParsedForm {
+                kotlinx.coroutines.delay(500)
+                return FakeFormParser().parse(uri)
+            }
+        }
+
+        val timeoutCoordinator = FormSaathiCoordinator(
+            formParser = delayedParser,
+            questionProvider = FakeQuestionProvider(),
+            voiceService = FakeVoiceService(),
+            answerProcessor = FakeAnswerProcessor(),
+            pdfGenerator = fakePdfGen,
+            conversationEngine = ConversationEngine(),
+            parseTimeoutMs = 100L
+        )
+
+        timeoutCoordinator.startSession(mockUri, SupportedLanguage.ENGLISH)
+
+        val state = timeoutCoordinator.uiState.value
+        assertTrue("Expected Error state on timeout, got $state", state is FormUiState.Error)
+        val errorState = state as FormUiState.Error
+        assertTrue("Error should be recoverable", errorState.recoverable)
+        assertTrue("Error message should mention timeout", errorState.message.contains("timed out", ignoreCase = true))
+    }
+
+    @Test
+    fun testParseFailureTransitionsToRecoverableError() = runBlocking {
+        val failingParser = object : FormParser {
+            override suspend fun parse(uri: Uri): ParsedForm {
+                throw IllegalStateException("Corrupted PDF document")
+            }
+        }
+
+        val failingCoordinator = FormSaathiCoordinator(
+            formParser = failingParser,
+            questionProvider = FakeQuestionProvider(),
+            voiceService = FakeVoiceService(),
+            answerProcessor = FakeAnswerProcessor(),
+            pdfGenerator = fakePdfGen,
+            conversationEngine = ConversationEngine()
+        )
+
+        failingCoordinator.startSession(mockUri, SupportedLanguage.ENGLISH)
+
+        val state = failingCoordinator.uiState.value
+        assertTrue("Expected Error state on parsing failure, got $state", state is FormUiState.Error)
+        val errorState = state as FormUiState.Error
+        assertTrue("Error should be recoverable", errorState.recoverable)
+        assertTrue(errorState.message.contains("Corrupted PDF document"))
     }
 }

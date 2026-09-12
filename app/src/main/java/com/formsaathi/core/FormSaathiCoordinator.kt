@@ -13,11 +13,17 @@ import com.formsaathi.model.FormField
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.model.ValidationResult
 import java.io.File
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 
 /**
  * Central coordinator orchestrating FormSaathi's session lifecycle, conversation flow,
@@ -29,7 +35,8 @@ class FormSaathiCoordinator(
     private val voiceService: VoiceService,
     private val answerProcessor: AnswerProcessor,
     private val pdfGenerator: CompletedPdfGenerator,
-    private val conversationEngine: ConversationEngine = ConversationEngine()
+    private val conversationEngine: ConversationEngine = ConversationEngine(),
+    private val parseTimeoutMs: Long = 35_000L
 ) {
     private val _uiState = MutableStateFlow<FormUiState>(FormUiState.Idle)
     val uiState: StateFlow<FormUiState> = _uiState.asStateFlow()
@@ -48,21 +55,51 @@ class FormSaathiCoordinator(
         }
 
         try {
-            val parsedForm = formParser.parse(uri)
-            mutex.withLock {
-                val session = FormSession(parsedForm, language)
-                activeSession = session
-
-                if (parsedForm.fields.isEmpty()) {
-                    _uiState.value = FormUiState.Reviewing(
-                        answers = emptyMap(),
-                        fields = emptyList(),
-                        documents = parsedForm.documents,
-                        language = language
-                    )
-                } else {
-                    emitCurrentQuestion(session, null)
+            coroutineScope {
+                // Background stage progress updater that accurately reflects parsing phases
+                val stageJob = launch {
+                    delay(750)
+                    if (isActive && _uiState.value is FormUiState.Parsing) {
+                        _uiState.value = FormUiState.Parsing("Reading text and performing OCR...")
+                    }
+                    delay(1750)
+                    if (isActive && _uiState.value is FormUiState.Parsing) {
+                        _uiState.value = FormUiState.Parsing("Detecting fields and preparing questions...")
+                    }
                 }
+
+                try {
+                    val parsedForm = withTimeout(parseTimeoutMs) {
+                        formParser.parse(uri)
+                    }
+
+                    stageJob.cancel()
+
+                    mutex.withLock {
+                        val session = FormSession(parsedForm, language)
+                        activeSession = session
+
+                        if (parsedForm.fields.isEmpty()) {
+                            _uiState.value = FormUiState.Reviewing(
+                                answers = emptyMap(),
+                                fields = emptyList(),
+                                documents = parsedForm.documents,
+                                language = language
+                            )
+                        } else {
+                            emitCurrentQuestion(session, null)
+                        }
+                    }
+                } finally {
+                    stageJob.cancel()
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            mutex.withLock {
+                _uiState.value = FormUiState.Error(
+                    message = "Form processing timed out after ${parseTimeoutMs / 1000} seconds. The document might be too complex or unreadable. Please try again or select another form.",
+                    recoverable = true
+                )
             }
         } catch (e: Exception) {
             mutex.withLock {

@@ -33,3 +33,4 @@ desktop.ini
 *.so
 
 app/src/main/assets/models/*.bin
+tmp/

@@ -45,7 +45,8 @@ fun FormSaathiNavigation(
     onRequestSampleForm: (() -> Unit)? = null,
     onRequestCreatePdf: (() -> Unit)? = null,
     onOpenHarness: (() -> Unit)? = null,
-    harnessScreen: (@Composable () -> Unit)? = null
+    harnessScreen: (@Composable () -> Unit)? = null,
+    onRetryProcessing: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -119,6 +120,8 @@ fun FormSaathiNavigation(
             val stage = when (state) {
                 is FormUiState.Parsing -> when {
                     state.stageMessage.contains("render", ignoreCase = true) -> ProcessingStage.RENDERING
+                    state.stageMessage.contains("question", ignoreCase = true) ||
+                    state.stageMessage.contains("prepare", ignoreCase = true) -> ProcessingStage.PREPARING_QUESTIONS
                     state.stageMessage.contains("ocr", ignoreCase = true) ||
                     state.stageMessage.contains("read", ignoreCase = true) ||
                     state.stageMessage.contains("text", ignoreCase = true) ||
@@ -133,7 +136,7 @@ fun FormSaathiNavigation(
                 currentStage = stage,
                 errorMessage = errorMessage,
                 onRetry = {
-                    onRequestSampleForm?.invoke()
+                    onRetryProcessing?.invoke() ?: onRequestSampleForm?.invoke()
                 },
                 onCancel = {
                     navController.navigate(Routes.HOME) {
@@ -147,6 +150,12 @@ fun FormSaathiNavigation(
             LaunchedEffect(uiState) {
                 if (uiState is FormUiState.Questioning) {
                     navController.navigate(Routes.QUESTIONS) {
+                        popUpTo(Routes.PROCESSING) {
+                            inclusive = true
+                        }
+                    }
+                } else if (uiState is FormUiState.Reviewing) {
+                    navController.navigate(Routes.REVIEW) {
                         popUpTo(Routes.PROCESSING) {
                             inclusive = true
                         }

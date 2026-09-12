@@ -40,9 +40,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
 import com.formsaathi.UI.FormSaathiNavigation
+import com.formsaathi.UI.ProcessingStage
 import com.formsaathi.UI.Routes
 import com.formsaathi.core.EngineFactory
 import com.formsaathi.core.FormSaathiCoordinator
+import com.formsaathi.core.FormSessionLauncher
 import com.formsaathi.core.FormUiState
 import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.SupportedLanguage
@@ -88,19 +90,21 @@ class MainActivity : ComponentActivity() {
                         mutableStateOf<String?>(null)
                     }
 
-                    var useRealFormParser by remember {
-                        mutableStateOf(false)
+                    val sessionLauncher = remember {
+                        FormSessionLauncher { useRealParser ->
+                            if (useRealParser) {
+                                EngineFactory.createRealCoordinator(context)
+                            } else {
+                                EngineFactory.createMockCoordinator(
+                                    context = context,
+                                    useRealPdfGenerator = true
+                                )
+                            }
+                        }
                     }
 
-                    val coordinator = remember(useRealFormParser) {
-                        if (useRealFormParser) {
-                            EngineFactory.createRealCoordinator(context)
-                        } else {
-                            EngineFactory.createMockCoordinator(
-                                context = context,
-                                useRealPdfGenerator = true
-                            )
-                        }
+                    var activeCoordinator by remember {
+                        mutableStateOf(sessionLauncher.activeCoordinator)
                     }
 
                     // SAF Document Picker for Source PDF
@@ -112,10 +116,7 @@ class MainActivity : ComponentActivity() {
                             selectedFileName = uri.lastPathSegment
                                 ?.substringAfterLast("/")
                                 ?: "Selected_Form.pdf"
-                            useRealFormParser = true
-                            scope.launch {
-                                coordinator.startSession(uri, selectedLanguage)
-                            }
+                            activeCoordinator = sessionLauncher.startRealSession(uri, selectedLanguage, scope)
                             navController.navigate(Routes.PROCESSING)
                         }
                     }
@@ -131,7 +132,7 @@ class MainActivity : ComponentActivity() {
                             outputFileManager.getShareableUri(cacheFile)
                         }
                         scope.launch {
-                            coordinator.generatePdf(targetUri)
+                            activeCoordinator.generatePdf(targetUri)
                         }
                     }
 
@@ -139,24 +140,30 @@ class MainActivity : ComponentActivity() {
                         navController = navController,
                         selectedLanguage = selectedLanguage,
                         selectedFileName = selectedFileName,
-                        coordinator = coordinator,
+                        coordinator = activeCoordinator,
                         outputFileManager = outputFileManager,
                         onLanguageSelected = { lang ->
                             selectedLanguage = lang
-                            coordinator.switchLanguage(lang)
+                            activeCoordinator.switchLanguage(lang)
                         },
                         onRequestPdf = {
                             pdfPicker.launch(arrayOf("application/pdf"))
                         },
                         onRequestSampleForm = {
                             val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
-                            selectedPdfUri = Uri.fromFile(sampleFile)
+                            val sampleUri = Uri.fromFile(sampleFile)
+                            selectedPdfUri = sampleUri
                             selectedFileName = sampleFile.name
-                            useRealFormParser = false
-                            scope.launch {
-                                coordinator.startSession(Uri.fromFile(sampleFile), selectedLanguage)
-                            }
+                            activeCoordinator = sessionLauncher.startSampleSession(sampleUri, selectedLanguage, scope)
                             navController.navigate(Routes.PROCESSING)
+                        },
+                        onRetryProcessing = {
+                            val uri = selectedPdfUri
+                            if (uri != null) {
+                                activeCoordinator = sessionLauncher.retrySession(uri, selectedLanguage, scope)
+                            } else {
+                                pdfPicker.launch(arrayOf("application/pdf"))
+                            }
                         },
                         onRequestCreatePdf = {
                             pdfCreateLauncher.launch("Completed_${selectedFileName ?: "Form.pdf"}")
@@ -166,7 +173,7 @@ class MainActivity : ComponentActivity() {
                         },
                         harnessScreen = {
                             Role4HarnessScreen(
-                                initialCoordinator = coordinator,
+                                initialCoordinator = activeCoordinator,
                                 outputFileManager = outputFileManager,
                                 onBackToApp = {
                                     navController.popBackStack()
