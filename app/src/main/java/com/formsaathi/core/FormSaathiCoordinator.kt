@@ -101,6 +101,8 @@ class FormSaathiCoordinator(
                     recoverable = true
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             mutex.withLock {
                 _uiState.value = FormUiState.Error(

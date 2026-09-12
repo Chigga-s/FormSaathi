@@ -33,7 +33,8 @@ data class ReviewField(
     val fieldName: String,
     val answer: String,
     val lowConfidence: Boolean = false,
-    val unknown: Boolean = false
+    val unknown: Boolean = false,
+    val fieldId: String = ""
 )
 
 data class ReviewDocument(
@@ -47,6 +48,7 @@ fun ReviewScreen(
     requiredDocuments: List<ReviewDocument>,
     onEditField: (ReviewField) -> Unit,
     onCreatePdf: () -> Unit,
+    enabled: Boolean = true,
     isGenerating: Boolean = false
 ) {
 
@@ -153,6 +155,7 @@ fun ReviewScreen(
                             }
 
                             Button(
+                                enabled = enabled,
                                 onClick = {
                                     onEditField(field)
                                 },
@@ -225,7 +228,7 @@ fun ReviewScreen(
 
         Button(
             onClick = onCreatePdf,
-            enabled = !isGenerating,
+            enabled = enabled && !isGenerating,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp),

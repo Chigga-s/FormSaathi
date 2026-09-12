@@ -1,26 +1,46 @@
 package com.formsaathi.UI
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.formsaathi.core.EngineFactory
+import androidx.navigation.compose.rememberNavController
 import com.formsaathi.core.FormSaathiCoordinator
 import com.formsaathi.core.FormUiState
-import com.formsaathi.model.AnswerSource
+import com.formsaathi.core.FormViewModel
+import com.formsaathi.model.FieldType
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.pdf.OutputFileManager
+import com.formsaathi.pdf.SamplePdfFactory
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 object Routes {
     const val SPLASH = "splash"
@@ -35,28 +55,71 @@ object Routes {
 
 @Composable
 fun FormSaathiNavigation(
-    navController: NavHostController,
-    selectedLanguage: SupportedLanguage,
-    selectedFileName: String?,
-    onLanguageSelected: (SupportedLanguage) -> Unit,
-    onRequestPdf: () -> Unit,
-    coordinator: FormSaathiCoordinator? = null,
-    outputFileManager: OutputFileManager? = null,
-    onRequestSampleForm: (() -> Unit)? = null,
-    onRequestCreatePdf: (() -> Unit)? = null,
-    onOpenHarness: (() -> Unit)? = null,
-    harnessScreen: (@Composable () -> Unit)? = null,
-    onRetryProcessing: (() -> Unit)? = null
+    model: FormViewModel = viewModel(),
+    outputFileManager: OutputFileManager? = null
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val activeCoordinator = coordinator ?: remember {
-        EngineFactory.createMockCoordinator(context, useRealPdfGenerator = true)
+    val navController = rememberNavController()
+    val state by model.state.collectAsState()
+    val draft by model.draft.collectAsState()
+    val recording by model.recording.collectAsState()
+    val busy by model.busy.collectAsState()
+    val voiceError by model.voiceError.collectAsState()
+    val output = outputFileManager ?: remember { OutputFileManager(context) }
+
+    val pdfPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+            model.startRealSession(uri)
+            navController.navigate(Routes.PROCESSING)
+        }
     }
-    val activeOutputManager = outputFileManager ?: remember {
-        OutputFileManager(context)
+
+    val pdfCreateLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { outputUri: Uri? ->
+        val targetUri = outputUri ?: run {
+            val cacheFile = output.createCachePdfFile(
+                "Completed_${model.selectedFileName ?: "Form.pdf"}"
+            )
+            output.getShareableUri(cacheFile)
+        }
+        model.generate(targetUri)
     }
-    val uiState by activeCoordinator.uiState.collectAsState()
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            model.startVoice()
+        } else {
+            model.permissionDenied()
+        }
+    }
+
+    BackHandler(enabled = !busy && !recording) {
+        if (navController.previousBackStackEntry != null) {
+            val currentRoute = navController.currentBackStackEntry?.destination?.route
+            if (currentRoute == Routes.QUESTIONS) {
+                val currentQ = state as? FormUiState.Questioning
+                if (currentQ?.canGoBack == true) {
+                    model.previousField()
+                } else {
+                    navController.popBackStack()
+                }
+            } else {
+                navController.popBackStack()
+            }
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -88,8 +151,7 @@ fun FormSaathiNavigation(
                     navController.popBackStack()
                 },
                 onContinue = { language ->
-                    onLanguageSelected(language)
-                    activeCoordinator.switchLanguage(language)
+                    model.selectLanguage(language)
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.LANGUAGE) {
                             inclusive = true
@@ -104,11 +166,20 @@ fun FormSaathiNavigation(
         // ---------------------------------------------------------
         composable(Routes.HOME) {
             HomeScreen(
-                language = selectedLanguage,
-                selectedFileName = selectedFileName,
-                onSelectForm = onRequestPdf,
-                onTrySampleForm = onRequestSampleForm,
-                onOpenHarness = onOpenHarness
+                language = model.language,
+                selectedFileName = model.selectedFileName,
+                onSelectForm = {
+                    pdfPicker.launch(arrayOf("application/pdf"))
+                },
+                onTrySampleForm = {
+                    val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
+                    val sampleUri = Uri.fromFile(sampleFile)
+                    model.startSampleSession(sampleUri, sampleFile.name)
+                    navController.navigate(Routes.PROCESSING)
+                },
+                onOpenHarness = {
+                    navController.navigate(Routes.HARNESS)
+                }
             )
         }
 
@@ -116,16 +187,15 @@ fun FormSaathiNavigation(
         // PROCESSING
         // ---------------------------------------------------------
         composable(Routes.PROCESSING) {
-            val state = uiState
-            val stage = when (state) {
+            val stage = when (val s = state) {
                 is FormUiState.Parsing -> when {
-                    state.stageMessage.contains("render", ignoreCase = true) -> ProcessingStage.RENDERING
-                    state.stageMessage.contains("question", ignoreCase = true) ||
-                    state.stageMessage.contains("prepare", ignoreCase = true) -> ProcessingStage.PREPARING_QUESTIONS
-                    state.stageMessage.contains("ocr", ignoreCase = true) ||
-                    state.stageMessage.contains("read", ignoreCase = true) ||
-                    state.stageMessage.contains("text", ignoreCase = true) ||
-                    state.stageMessage.contains("detect", ignoreCase = true) -> ProcessingStage.READING_TEXT
+                    s.stageMessage.contains("render", ignoreCase = true) -> ProcessingStage.RENDERING
+                    s.stageMessage.contains("question", ignoreCase = true) ||
+                    s.stageMessage.contains("prepare", ignoreCase = true) -> ProcessingStage.PREPARING_QUESTIONS
+                    s.stageMessage.contains("ocr", ignoreCase = true) ||
+                    s.stageMessage.contains("read", ignoreCase = true) ||
+                    s.stageMessage.contains("text", ignoreCase = true) ||
+                    s.stageMessage.contains("detect", ignoreCase = true) -> ProcessingStage.READING_TEXT
                     else -> ProcessingStage.PREPARING_QUESTIONS
                 }
                 else -> ProcessingStage.PREPARING_QUESTIONS
@@ -136,7 +206,7 @@ fun FormSaathiNavigation(
                 currentStage = stage,
                 errorMessage = errorMessage,
                 onRetry = {
-                    onRetryProcessing?.invoke() ?: onRequestSampleForm?.invoke()
+                    model.retrySession()
                 },
                 onCancel = {
                     navController.navigate(Routes.HOME) {
@@ -147,14 +217,14 @@ fun FormSaathiNavigation(
                 }
             )
 
-            LaunchedEffect(uiState) {
-                if (uiState is FormUiState.Questioning) {
+            LaunchedEffect(state) {
+                if (state is FormUiState.Questioning) {
                     navController.navigate(Routes.QUESTIONS) {
                         popUpTo(Routes.PROCESSING) {
                             inclusive = true
                         }
                     }
-                } else if (uiState is FormUiState.Reviewing) {
+                } else if (state is FormUiState.Reviewing) {
                     navController.navigate(Routes.REVIEW) {
                         popUpTo(Routes.PROCESSING) {
                             inclusive = true
@@ -168,50 +238,97 @@ fun FormSaathiNavigation(
         // QUESTIONS
         // ---------------------------------------------------------
         composable(Routes.QUESTIONS) {
-            val state = uiState as? FormUiState.Questioning
-            if (state != null) {
-                var typedAnswer by remember(state.currentField.id) {
-                    mutableStateOf(state.currentAnswer?.rawValue ?: "")
+            when (val current = state) {
+                is FormUiState.Questioning -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Language switcher row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            SupportedLanguage.entries.forEach { lang ->
+                                TextButton(
+                                    enabled = !busy && !recording,
+                                    onClick = { model.selectLanguage(lang) }
+                                ) {
+                                    Text(
+                                        text = when (lang) {
+                                            SupportedLanguage.ENGLISH -> "English"
+                                            SupportedLanguage.HINDI -> "हिन्दी"
+                                            SupportedLanguage.MARATHI -> "मराठी"
+                                        },
+                                        fontWeight = if (model.language == lang) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (model.language == lang) MaterialTheme.colorScheme.primary else Color.Gray
+                                    )
+                                }
+                            }
+                        }
+
+                        if (recording) {
+                            Text(
+                                text = "Recording… tap Stop, or wait up to 10 seconds",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
+                            )
+                            Button(
+                                onClick = { model.stopVoice() },
+                                modifier = Modifier.padding(horizontal = 24.dp)
+                            ) {
+                                Text("Stop recording")
+                            }
+                        }
+
+                        if (busy) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+
+                        voiceError?.let { err ->
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        QuestionScreen(
+                            question = QuestionItem(
+                                question = current.questionText,
+                                answer = draft,
+                                required = current.currentField.required,
+                                validationMessage = current.validationError
+                            ),
+                            questionNumber = current.questionIndex + 1,
+                            totalQuestions = current.totalQuestions,
+                            onAnswerChanged = model::edit,
+                            onPrevious = { model.previousField() },
+                            onNext = { model.submit() },
+                            onSkip = { model.skipCurrentField() },
+                            onMicrophone = {
+                                if (recording) {
+                                    model.stopVoice()
+                                } else {
+                                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                            enabled = !busy && !recording,
+                            canSkip = current.canSkip
+                        )
+                    }
                 }
-
-                QuestionScreen(
-                    question = QuestionItem(
-                        question = state.questionText,
-                        answer = typedAnswer,
-                        required = state.currentField.required,
-                        validationMessage = state.validationError
-                    ),
-                    questionNumber = state.questionIndex + 1,
-                    totalQuestions = state.totalQuestions,
-                    onAnswerChanged = { typedAnswer = it },
-                    onPrevious = {
-                        activeCoordinator.previousField()
-                    },
-                    onNext = {
-                        scope.launch {
-                            activeCoordinator.submitAnswer(typedAnswer, AnswerSource.TYPED)
-                        }
-                    },
-                    onSkip = {
-                        activeCoordinator.skipCurrentField()
-                    },
-                    onMicrophone = {
-                        Toast.makeText(
-                            context,
-                            "Voice input: Listening simulated. Type answer or proceed.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                )
-            }
-
-            LaunchedEffect(uiState) {
-                if (uiState is FormUiState.Reviewing) {
-                    navController.navigate(Routes.REVIEW) {
-                        popUpTo(Routes.QUESTIONS) {
-                            inclusive = true
+                is FormUiState.Reviewing -> {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Routes.REVIEW) {
+                            popUpTo(Routes.QUESTIONS) {
+                                inclusive = true
+                            }
                         }
                     }
+                }
+                else -> {
+                    // Waiting or transitioning
                 }
             }
         }
@@ -220,61 +337,47 @@ fun FormSaathiNavigation(
         // REVIEW
         // ---------------------------------------------------------
         composable(Routes.REVIEW) {
-            val state = uiState as? FormUiState.Reviewing
-            if (state != null) {
-                val reviewFields = state.fields.map { field ->
-                    val ans = state.answers[field.id]
-                    ReviewField(
-                        fieldName = field.sourceLabel,
-                        answer = ans?.normalizedValue ?: "",
-                        lowConfidence = field.confidence in 0.01f..0.7f,
-                        unknown = ans == null
-                    )
-                }
-
-                val reviewDocs = state.documents.map { doc ->
-                    ReviewDocument(
-                        name = doc.name,
-                        constraint = doc.requirement
-                    )
-                }
-
-                ReviewScreen(
-                    fields = reviewFields,
-                    requiredDocuments = reviewDocs,
-                    onEditField = { reviewField ->
-                        val targetField = state.fields.find { it.sourceLabel == reviewField.fieldName }
-                            ?: state.fields.firstOrNull()
-                        if (targetField != null) {
-                            activeCoordinator.jumpToField(targetField.id)
-                            navController.navigate(Routes.QUESTIONS)
-                        }
-                    },
-                    onCreatePdf = {
-                        if (onRequestCreatePdf != null) {
-                            onRequestCreatePdf()
-                        } else {
-                            val targetFile = activeOutputManager.createCachePdfFile(
-                                "Completed_${selectedFileName ?: "Form.pdf"}"
+            when (val current = state) {
+                is FormUiState.Reviewing -> {
+                    ReviewScreen(
+                        fields = current.fields.map { field ->
+                            ReviewField(
+                                fieldName = field.sourceLabel,
+                                answer = current.answers[field.id]?.normalizedValue.orEmpty(),
+                                lowConfidence = field.confidence < 0.75f,
+                                unknown = field.type == FieldType.UNKNOWN,
+                                fieldId = field.id
                             )
-                            val targetUri = activeOutputManager.getShareableUri(targetFile)
-                            scope.launch {
-                                activeCoordinator.generatePdf(targetUri)
+                        },
+                        requiredDocuments = current.documents.map { doc ->
+                            ReviewDocument(doc.name, doc.requirement)
+                        },
+                        onEditField = { reviewField ->
+                            model.jumpToField(reviewField.fieldId)
+                            navController.navigate(Routes.QUESTIONS)
+                        },
+                        onCreatePdf = {
+                            pdfCreateLauncher.launch("Completed_${model.selectedFileName ?: "Form.pdf"}")
+                        },
+                        enabled = !busy,
+                        isGenerating = current.isGenerating || busy
+                    )
+                }
+                is FormUiState.Completed -> {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Routes.RESULT) {
+                            popUpTo(Routes.REVIEW) {
+                                inclusive = true
                             }
-                        }
-                    },
-                    isGenerating = state.isGenerating
-                )
-            }
-
-            LaunchedEffect(uiState) {
-                if (uiState is FormUiState.Completed) {
-                    navController.navigate(Routes.RESULT) {
-                        popUpTo(Routes.REVIEW) {
-                            inclusive = true
                         }
                     }
                 }
+                is FormUiState.Questioning -> {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Routes.QUESTIONS)
+                    }
+                }
+                else -> {}
             }
         }
 
@@ -282,58 +385,79 @@ fun FormSaathiNavigation(
         // RESULT
         // ---------------------------------------------------------
         composable(Routes.RESULT) {
-            val state = uiState as? FormUiState.Completed
-            val errorState = uiState as? FormUiState.Error
+            when (val current = state) {
+                is FormUiState.Completed -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (current.warnings.isNotEmpty()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "Notice: Some answer text was automatically formatted to fit inside the form boxes.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFB35A00)
+                                )
+                            }
+                        }
 
-            ResultScreen(
-                success = state != null,
-                fileName = state?.filename ?: selectedFileName ?: "completed_form.pdf",
-                errorMessage = errorState?.message,
-                onOpenPdf = {
-                    if (state != null) {
-                        try {
-                            val openIntent = activeOutputManager.createOpenPdfIntent(state.outputUri)
-                            context.startActivity(openIntent)
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                "No PDF viewer app found: ${e.message}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+                        ResultScreen(
+                            success = true,
+                            fileName = current.filename,
+                            onOpenPdf = {
+                                try {
+                                    val intent = output.createOpenPdfIntent(current.outputUri)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "No PDF viewer installed: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            onSharePdf = {
+                                try {
+                                    val intent = output.createSharePdfIntent(current.outputUri)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Sharing failed: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            onBackHome = {
+                                navController.navigate(Routes.HOME) {
+                                    popUpTo(Routes.HOME) {
+                                        inclusive = true
+                                    }
+                                }
+                            }
+                        )
                     }
-                },
-                onSharePdf = {
-                    if (state != null) {
-                        try {
-                            val shareIntent = activeOutputManager.createSharePdfIntent(state.outputUri)
-                            context.startActivity(shareIntent)
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                "Sharing failed: ${e.message}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                },
-                onBackHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) {
-                            inclusive = true
+                }
+                else -> {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.HOME) {
+                                inclusive = true
+                            }
                         }
                     }
                 }
-            )
+            }
         }
 
         // ---------------------------------------------------------
-        // HARNESS (Developer Debug Screen)
+        // HARNESS (Developer Test Harness)
         // ---------------------------------------------------------
-        if (harnessScreen != null) {
-            composable(Routes.HARNESS) {
-                harnessScreen()
-            }
+        composable(Routes.HARNESS) {
+            Role4HarnessScreen(
+                initialCoordinator = model.coordinator,
+                outputFileManager = output,
+                onBackToApp = {
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }

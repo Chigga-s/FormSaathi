@@ -1,90 +1,52 @@
-# FormSaathi - Role 4: Core Session, Conditional Logic, PDF Generation & Integration Wiring
+# FormSaathi
 
-**Branch:** `feature/core-pdf`  
-**Target Track:** Jan Jeevan  
-**Primary Responsibilities:** Session state management, question conversation flow & conditional rules, anti-OOM multi-page PDF generation with dynamic text fitting, and integration orchestration (`FormSaathiCoordinator`).
+Native Android prototype for answering PDF-form questions in English, Hindi and Marathi, then generating a flattened PDF on-device. See `PLAN(1).md` for the original scope.
 
----
+## Build
 
-## 1. Subsystem Overview
+Requirements: JDK 17 or 21, Android SDK 34, NDK `26.1.10909125`, CMake `3.22.1`, and Git. The build targets Android 8/API 26 or newer, with ARM64 phone and x86-64 emulator libraries. Set `JAVA_HOME` and `ANDROID_HOME` for your machine, or configure these through Android Studio. Do not commit machine-specific Java/SDK paths.
 
-Role 4 acts as the central spine and dependency wiring harness for the FormSaathi application. It implements:
+From the repository root on Windows:
 
-1. **Shared Data Contracts (`com.formsaathi.model`)**:
-   - `SupportedLanguage`, `FieldType`, `PageInfo`, `NormalizedRect`, `FormField`, `FormAnswer`, `AnswerSource`, `RequiredDocument`, `ParsedForm`, `ValidationResult`.
-   - Normalization rule: All coordinates are normalized $0.0 \dots 1.0$ relative to rendered page width/height.
-
-2. **Frozen Service Interfaces & Fakes (`com.formsaathi.contracts`)**:
-   - `FormParser`, `QuestionProvider`, `VoiceService`, `AnswerProcessor`, `CompletedPdfGenerator`.
-   - Complete deterministic fake implementations (`FakeFormParser`, `FakeQuestionProvider`, `FakeVoiceService`, `FakeAnswerProcessor`, `FakeCompletedPdfGenerator`) allowing Role 1 (UI) to run independently without waiting for native or ML dependencies.
-   - **Contract Refinement Note**: `CompletedPdfGenerator.generate()` returns `GenerationResult` (wrapping `warnings: List<TextFitWarning>`) rather than `Unit`. This change is necessary for CORE-5 text-fitting truncation warnings to be surfaced to the review screen and completed session state. This modifies the frozen contract from `PLAN(1).md` and requires team agreement across all roles before branch integration into `main`.
-
-3. **Core State & Conversation Logic (`com.formsaathi.core`)**:
-   - `FormSession`: In-memory state container tracking answers (`fieldId -> FormAnswer`), visited history, and language. Designed for single-threaded UI coordination via `FormSaathiCoordinator`.
-   - `ConversationEngine`: Implements the MVP conditional rule: answering affirmative ("yes") to `SAME_AS_PERMANENT_ADDRESS` automatically copies the permanent address answer to `CURRENT_ADDRESS` with `AnswerSource.COPIED_BY_RULE` and skips the duplicate question. Negative or alternative answers leave `CURRENT_ADDRESS` active for the user.
-   - `FormUiState`: Immutable sealed hierarchy consumed by Jetpack Compose.
-   - `FormSaathiCoordinator`: The central entry point for UI events (`startSession`, `switchLanguage`, `submitAnswer`, `skipCurrentField`, `previousField`, `updateAnswerInReview`, `generatePdf`).
-   - `EngineFactory`: Factory for assembling coordinators using either deterministic mocks or production engines.
-
-4. **PDF Generation & Export Engine (`com.formsaathi.pdf`)**:
-   - `AnswerTextFitter`: High-precision text fitting using `TextPaint` and `StaticLayout`. Auto-scales fonts (13sp down to 6.5sp), wraps multi-line addresses, applies 4% padding, and enforces strict canvas clipping to prevent text spilling onto adjacent form lines.
-   - `PdfPageComposer`: Scales background page bitmaps to PDF page points, converts normalized coordinates ($0.0 \dots 1.0$) to canvas coordinates, and overlays answer text with distinct pen-blue ink (`#0D2546`). Returns text-fit warnings when text is clipped.
-   - `AndroidCompletedPdfGenerator`: Production `CompletedPdfGenerator` processing pages one-by-one with immediate `bitmap.recycle()` calls, dynamic scale capping to prevent OOM on large pages, and strict stream closure.
-   - `SamplePdfFactory`: Generates a valid multi-page source PDF matching `FakeFormParser` layout for realistic offline testing and mock sessions without network access.
-   - `OutputFileManager`: Manages Storage Access Framework (`ACTION_CREATE_DOCUMENT`), internal cache PDFs, `FileProvider` content URIs, and Android View/Share intents without broad storage permissions.
-
----
-
-## 2. Directory Structure
-
-```text
-app/src/main/java/com/formsaathi/
-├── model/
-│   ├── DataContracts.kt
-│   └── GenerationResult.kt
-├── contracts/
-│   ├── ServiceInterfaces.kt
-│   └── FakeEngines.kt
-├── core/
-│   ├── FormUiState.kt
-│   ├── ConversationEngine.kt
-│   ├── FormSession.kt
-│   ├── FormSaathiCoordinator.kt
-│   └── EngineFactory.kt
-└── pdf/
-    ├── AnswerTextFitter.kt
-    ├── PdfPageComposer.kt
-    ├── AndroidCompletedPdfGenerator.kt
-    ├── SamplePdfFactory.kt
-    └── OutputFileManager.kt
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup-voice.ps1 -DownloadModel
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
----
+The setup script retrieves Whisper v1.7.6 at commit `a8d002cfd879315632a579e73f0148d06959de36` and downloads the multilingual Tiny Q5_1 model. It verifies the model SHA-256 `818710568DA3CA15689E31A743197B520007872FF9576237BDA97BD1B469C3D7` and fails on mismatch. The upstream model URL currently follows `main`; keep the pinned hash for repeatable releases. Existing source checkouts and models are not overwritten.
 
-## 3. How Other Roles Merge With Role 4
+The source checkout and model are intentionally ignored by Git. Model asset: `app/src/main/assets/models/whisper-tiny-multilingual-q5.bin`. Omitting `-DownloadModel` prepares native sources only. The app can launch and accept typed input without a model; voice then reports that the model is unavailable. Rebuild and reinstall after adding a model.
 
-### Role 1 (UI)
-Injects `FormSaathiCoordinator` into the screen/viewmodel hierarchy via `EngineFactory.createMockCoordinator()`:
-```kotlin
-val coordinator = EngineFactory.createMockCoordinator(context)
-val uiState by coordinator.uiState.collectAsState()
+APK: `app/build/outputs/apk/debug/app-debug.apk`. This is a debug APK, not a signed production release.
+
+## Workflow
+
+1. Select a question language and import a PDF through the document picker, or start a mock session with the built-in sample form.
+2. Answer detected questions by typing or recording up to ten seconds of audio.
+3. Inspect/edit the transcript before submitting it. Invalid answers remain available for correction.
+4. Review answers and document requirements; edit any field that needs correction.
+5. Choose where to save `Completed_Form.pdf`, then open or share it.
+
+Question language can change within a session. Session state is held across navigation and rotation. Backgrounding cancels an active recording. Raw and normalized answers are retained in memory. Internal recordings use mono 16 kHz PCM16 little-endian `.pcm` files, deleted after transcription or cancellation.
+
+## Architecture and Integration
+
+- `UI/`: Role 1 screens (Splash, Language, Home, Processing, Questions, Review, Result) connected to live state by `AppNavigation.kt`.
+- `core/`: Role 4 session/coordinator/factories, `FormSessionLauncher` for stable coordinator lifecycle, and `FormViewModel` for live voice/recording integration.
+- `formengine/`: Role 2 ML Kit OCR form engine, PdfRenderer, bundled Latin/Devanagari recognizers, and rule-based field/rectangle detection.
+- `voice/` and `cpp/`: Role 3 recording, file decoding, serialized native Whisper model ownership and explicit `en`/`hi`/`mr` inference hints.
+- `language/`, `assets/questions_*.json`, `answer/`: local multilingual questions and deterministic normalization/validation (gender, dates, numbers, categories).
+- `pdf/`: Role 4 multi-page flattened output, dynamic memory scaling, text fitting, wrapping/clipping warnings, same-address conditional copying, and content-URI export.
+
+## Verification
+
+```powershell
+.\gradlew.bat testDebugUnitTest assembleDebug compileDebugAndroidTestKotlin --offline --console=plain
+.\gradlew.bat connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.formsaathi.pdf.AndroidCompletedPdfGeneratorTest" --offline --console=plain
 ```
 
-### Role 2 (Form Engine / OCR)
-Replaces `FakeFormParser` in `EngineFactory.createRealCoordinator(context, realFormParser, ...)` with their `RealFormParser`.
+The connected command requires a connected device/emulator.
 
-### Role 3 (Voice / Language / Normalization)
-Replaces `FakeQuestionProvider`, `FakeVoiceService`, and `FakeAnswerProcessor` in `EngineFactory.createRealCoordinator(context, ..., realVoiceService, realQuestionProvider, realAnswerProcessor)`.
+## Third-party notices
 
----
-
-## 4. Verification & Testing
-
-### Unit Tests (`app/src/test/java/com/formsaathi/`)
-- `ConversationEngineTest`: Verifies automated same-address copying, non-address field preservation, skipping, and index calculations.
-- `FormSessionTest`: Verifies state transitions, answer mutations, active question position counting, and navigation history.
-- `PdfPageComposerTest`: Verifies coordinate transform formulas, CanvasRect dimensions, text-fit warning structures, and multi-line heuristics.
-- `FormSaathiCoordinatorTest`: Verifies end-to-end lifecycle from document parse to question progression, validation errors, and completed PDF export.
-
-### Instrumented Proof Tests (`app/src/androidTest/java/com/formsaathi/`)
-- `AndroidCompletedPdfGeneratorTest`: Verifies on Android that `SamplePdfFactory` creates a valid 2-page source PDF, `AndroidCompletedPdfGenerator` produces a valid non-empty output PDF with answers for both page 1 and page 2 (specifically verifying `field_annual_income`), preserves page order, and reopens cleanly via Android's `PdfRenderer`.
+Whisper and ggml license files are included in the downloaded source checkout. The model is distributed through `ggerganov/whisper.cpp` on Hugging Face and derives from OpenAI Whisper. Review upstream model licensing and redistribute the required notices with the APK. ML Kit is subject to Google's SDK terms. Include licenses/redistribution permission for selected sample forms and any added fonts before public release.

@@ -39,7 +39,9 @@ fun QuestionScreen(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onSkip: () -> Unit,
-    onMicrophone: () -> Unit
+    onMicrophone: () -> Unit,
+    enabled: Boolean = true,
+    canSkip: Boolean = true
 ) {
 
     val isInvalid =
@@ -86,11 +88,12 @@ fun QuestionScreen(
 
             OutlinedTextField(
                 value = question.answer,
+                enabled = enabled,
                 onValueChange = onAnswerChanged,
                 modifier = Modifier
                     .weight(1f)
-                    .height(60.dp),
-                singleLine = true,
+                    .height(100.dp),
+                singleLine = false,
                 label = {
                     Text("Your answer")
                 },
@@ -103,6 +106,7 @@ fun QuestionScreen(
 
             IconButton(
                 onClick = onMicrophone,
+                enabled = enabled,
                 modifier = Modifier
                     .size(56.dp)
                     .semantics {
@@ -158,7 +162,7 @@ fun QuestionScreen(
 
             Button(
                 onClick = onPrevious,
-                enabled = questionNumber > 1,
+                enabled = enabled && questionNumber > 1,
                 modifier = Modifier
                     .weight(1f)
                     .height(52.dp)
@@ -168,6 +172,7 @@ fun QuestionScreen(
 
             Button(
                 onClick = onSkip,
+                enabled = enabled && canSkip,
                 modifier = Modifier
                     .weight(1f)
                     .height(52.dp),
@@ -193,7 +198,7 @@ fun QuestionScreen(
 
             Button(
                 onClick = onNext,
-                enabled = !isInvalid,
+                enabled = enabled && !isInvalid,
                 modifier = Modifier
                     .weight(1f)
                     .height(52.dp),

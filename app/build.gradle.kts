@@ -40,6 +40,32 @@ android {
     buildFeatures {
         compose = true
     }
+
+    val ndkHomeCandidates = listOfNotNull(
+        System.getenv("ANDROID_NDK_ROOT"),
+        System.getenv("ANDROID_NDK_HOME"),
+        System.getenv("ANDROID_HOME")?.let { "$it/ndk/26.1.10909125" },
+        System.getenv("ANDROID_SDK_ROOT")?.let { "$it/ndk/26.1.10909125" },
+        "${System.getProperty("user.home")}/AppData/Local/Android/Sdk/ndk/26.1.10909125"
+    )
+    val ndkPath = ndkHomeCandidates.firstOrNull { file(it).exists() }
+
+    if (ndkPath != null) {
+        ndkVersion = "26.1.10909125"
+
+        defaultConfig {
+            ndk {
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+        }
+
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
+        }
+    }
 }
 
 dependencies {
@@ -51,6 +77,8 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)

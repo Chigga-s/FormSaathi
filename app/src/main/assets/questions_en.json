@@ -1,0 +1,21 @@
+{
+  "FULL_NAME": "What is your full name?",
+  "FATHER_NAME": "What is your father's name?",
+  "MOTHER_NAME": "What is your mother's name?",
+  "DATE_OF_BIRTH": "What is your date of birth?",
+  "GENDER": "What is your gender?",
+  "MOBILE": "What is your 10-digit mobile number?",
+  "EMAIL": "What is your email address?",
+  "AADHAAR": "What is your 12-digit Aadhaar number?",
+  "PERMANENT_ADDRESS": "What is your permanent address?",
+  "CURRENT_ADDRESS": "What is your current address?",
+  "SAME_AS_PERMANENT_ADDRESS": "Is your current address the same as your permanent address?",
+  "STATE": "Which state do you live in?",
+  "DISTRICT": "Which district do you live in?",
+  "PINCODE": "What is your 6-digit PIN code?",
+  "CATEGORY": "What is your category (e.g. General, OBC, SC, ST)?",
+  "ANNUAL_INCOME": "What is your total annual income in Rupees?",
+  "PHOTO": "Please provide your photograph.",
+  "SIGNATURE": "Please provide your signature.",
+  "UNKNOWN": "Please provide an answer for this field."
+}
