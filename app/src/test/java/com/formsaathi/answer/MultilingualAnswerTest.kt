@@ -49,6 +49,12 @@ class MultilingualAnswerTest {
         assertEquals("0", NumberNormalizer.normalize("शून्य"))
     }
 
+    @Test fun photoRequiresAnAttachment() {
+        assertEquals("/photos/a.jpg", processor.normalize(FieldType.PHOTO, "/photos/a.jpg", SupportedLanguage.ENGLISH))
+        assertTrue(processor.validate(FieldType.PHOTO, "/photos/a.jpg") is ValidationResult.Valid)
+        assertTrue(processor.validate(FieldType.PHOTO, "  ") is ValidationResult.Invalid)
+    }
+
     @Test fun identifiersRejectEmbeddedLetters() {
         assertTrue(processor.validate(FieldType.MOBILE, "abc9876543210") is ValidationResult.Invalid)
     }

@@ -2,6 +2,9 @@ package com.formsaathi.pdf
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -26,9 +29,31 @@ import kotlin.math.sqrt
  */
 class AndroidCompletedPdfGenerator(
     private val context: Context,
-    private val composer: PdfPageComposer = PdfPageComposer(),
+    private val composer: PdfPageComposer? = null,
     private val maxBitmapPixels: Int = 4_000_000  // ~16MB ARGB_8888, safe for budget phones
 ) : CompletedPdfGenerator {
+
+    private fun composer(): PdfPageComposer {
+        return composer ?: PdfPageComposer(imageLoader = ::decodePhoto)
+    }
+
+    private fun decodePhoto(path: String): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) {
+                sample *= 2
+            }
+            BitmapFactory.decodeFile(
+                path,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     override suspend fun generate(
         sourceUri: Uri,
@@ -73,6 +98,9 @@ class AndroidCompletedPdfGenerator(
                 val bmpHeight = (pageHeightPoints * effectiveScale).toInt().coerceAtLeast(1)
 
                 val pageBitmap = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                // Same transparency trap as the OCR renderer: unpainted
+                // regions stay transparent and print black. Opaque white base.
+                Canvas(pageBitmap).drawColor(Color.WHITE)
                 rendererPage.render(pageBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
 
                 // Start PdfDocument page
@@ -86,7 +114,7 @@ class AndroidCompletedPdfGenerator(
 
                 try {
                     val fieldsOnPage = parsedForm.fields.filter { it.pageIndex == pageIndex }
-                    val pageWarnings = composer.composePage(
+                    val pageWarnings = composer().composePage(
                         canvas = documentPage.canvas,
                         pageBitmap = pageBitmap,
                         pageWidthPoints = pageWidthPoints,

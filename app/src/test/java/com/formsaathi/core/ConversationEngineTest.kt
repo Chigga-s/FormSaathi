@@ -165,6 +165,34 @@ class ConversationEngineTest {
     }
 
     @Test
+    fun testPhotoAndSignatureAreAskedWithAttachUi() {
+        val photo = FormField(
+            id = "f_photo",
+            sourceLabel = "Photograph",
+            type = FieldType.PHOTO,
+            pageIndex = 0,
+            labelBox = NormalizedRect(0.1f, 0.6f, 0.3f, 0.65f),
+            answerBox = NormalizedRect(0.35f, 0.6f, 0.8f, 0.65f)
+        )
+        val signature = FormField(
+            id = "f_sign",
+            sourceLabel = "Signature",
+            type = FieldType.SIGNATURE,
+            pageIndex = 0,
+            labelBox = NormalizedRect(0.1f, 0.7f, 0.3f, 0.75f),
+            answerBox = NormalizedRect(0.35f, 0.7f, 0.8f, 0.75f)
+        )
+        val fields = sampleFields + listOf(photo, signature)
+        assertFalse("Photo must be asked with the attach UI",
+            engine.shouldSkipField(photo, fields, emptyMap()))
+        assertFalse("Signature must be asked with the attach UI",
+            engine.shouldSkipField(signature, fields, emptyMap()))
+        assertEquals("Photo and signature count as questions",
+            fields.size,
+            fields.count { f -> !engine.shouldSkipField(f, fields, emptyMap()) })
+    }
+
+    @Test
     fun testCopiedAnswerCarriesCopiedByRuleSource() {
         val permAnswer = FormAnswer(
             fieldId = "f_perm_addr",

@@ -2,6 +2,8 @@ package com.formsaathi.formengine
 import android.graphics.pdf.PdfRenderer
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.net.Uri
 import com.formsaathi.model.PageInfo
 
@@ -29,6 +31,11 @@ class AndroidPdfPageRenderer(
                     renderer.openPage(pageIndex).use{page->
                     val (bitmapWidth, bitmapHeight) = calculateBitmapSize(page.width, page.height)
                     val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+                    // PdfRenderer leaves unpainted regions transparent (alpha 0), which
+                    // downstream consumers flatten to black: ML Kit then sees dark text
+                    // on black and the PDF background prints black. An opaque white
+                    // base guarantees dark-on-white for OCR and output alike.
+                    Canvas(bitmap).drawColor(Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     val pageInfo = PageInfo(
                         pageIndex = pageIndex,

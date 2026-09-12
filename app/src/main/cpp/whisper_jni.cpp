@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <string>
+#include <unistd.h>
 
 #include "whisper.h"
 
@@ -141,7 +142,10 @@ Java_com_formsaathi_voice_WhisperBridge_transcribe(
 
     params.print_progress = false;
     params.print_realtime = false;
-    params.n_threads = 2; // Default limit for threads
+    int onlineCores = (int) sysconf(_SC_NPROCESSORS_ONLN);
+    if (onlineCores < 1) onlineCores = 2;
+    if (onlineCores > 8) onlineCores = 8;
+    params.n_threads = onlineCores;
 
 
 

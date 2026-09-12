@@ -58,6 +58,8 @@ class ConversationEngine {
         allFields: List<FormField>,
         currentAnswers: Map<String, FormAnswer>
     ): Boolean {
+        // Photo and signature fields are asked with an attach-photo UI
+        // instead of a text input, so they are never skipped here.
         // Skip CURRENT_ADDRESS if SAME_AS_PERMANENT_ADDRESS answered affirmative
         if (field.type == FieldType.CURRENT_ADDRESS) {
             val sameAsPermAnswer = currentAnswers.values.firstOrNull { ans ->

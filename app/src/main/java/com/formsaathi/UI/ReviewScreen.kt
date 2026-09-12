@@ -34,7 +34,8 @@ data class ReviewField(
     val answer: String,
     val lowConfidence: Boolean = false,
     val unknown: Boolean = false,
-    val fieldId: String = ""
+    val fieldId: String = "",
+    val manualStep: Boolean = false
 )
 
 data class ReviewDocument(
@@ -83,104 +84,12 @@ fun ReviewScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            items(fields) { field ->
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF5F3FA)
-                    )
-                ) {
-
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-
-                                Text(
-                                    text = field.fieldName,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = FormSathiPurple
-                                )
-
-                                Spacer(
-                                    modifier = Modifier.height(4.dp)
-                                )
-
-                                Text(
-                                    text = if (field.answer.isBlank()) {
-                                        "No answer"
-                                    } else {
-                                        field.answer
-                                    },
-                                    fontSize = 17.sp,
-                                    color = Color.Black
-                                )
-
-                                if (field.lowConfidence) {
-
-                                    Spacer(
-                                        modifier = Modifier.height(6.dp)
-                                    )
-
-                                    Text(
-                                        text = "Please verify this answer.",
-                                        fontSize = 13.sp,
-                                        color = Color(0xFFB35A00)
-                                    )
-                                }
-
-                                if (field.unknown) {
-
-                                    Spacer(
-                                        modifier = Modifier.height(6.dp)
-                                    )
-
-                                    Text(
-                                        text = "Manual review required.",
-                                        fontSize = 13.sp,
-                                        color = Color.Red
-                                    )
-                                }
-                            }
-
-                            Button(
-                                enabled = enabled,
-                                onClick = {
-                                    onEditField(field)
-                                },
-                                modifier = Modifier.height(48.dp)
-                            ) {
-
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit"
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
             if (requiredDocuments.isNotEmpty()) {
 
                 item {
 
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
                     Text(
-                        text = "Required documents",
+                        text = "Attach these documents with your form",
                         fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
                         color = FormSathiPurple
@@ -218,7 +127,112 @@ fun ReviewScreen(
                         }
                     }
                 }
+
+                item {
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text = "Your answers",
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = FormSathiPurple
+                    )
+                }
             }
+
+            items(fields) { field ->
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF5F3FA)
+                    )
+                ) {
+
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+
+                                Text(
+                                    text = field.fieldName,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = FormSathiPurple
+                                )
+
+                                Spacer(
+                                    modifier = Modifier.height(4.dp)
+                                )
+
+                                Text(
+                                    text = if (field.manualStep) {
+                                        "Photo attached — use Edit in flow to change"
+                                    } else if (field.answer.isBlank()) {
+                                        "No answer"
+                                    } else {
+                                        field.answer
+                                    },
+                                    fontSize = 17.sp,
+                                    color = Color.Black
+                                )
+
+                                if (field.lowConfidence) {
+
+                                    Spacer(
+                                        modifier = Modifier.height(6.dp)
+                                    )
+
+                                    Text(
+                                        text = "Please verify this answer.",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFFB35A00)
+                                    )
+                                }
+
+                                if (field.unknown) {
+
+                                    Spacer(
+                                        modifier = Modifier.height(6.dp)
+                                    )
+
+                                    Text(
+                                        text = "Manual review required.",
+                                        fontSize = 13.sp,
+                                        color = Color.Red
+                                    )
+                                }
+                            }
+
+                            Button(
+                                enabled = enabled && !field.manualStep,
+                                onClick = {
+                                    onEditField(field)
+                                },
+                                modifier = Modifier.height(48.dp)
+                            ) {
+
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
         }
 
         Spacer(

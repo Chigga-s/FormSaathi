@@ -96,6 +96,7 @@ data class FormAnswer(
 enum class AnswerSource {
     TYPED,
     VOICE,
+    PHOTO,
     COPIED_BY_RULE
 }
 

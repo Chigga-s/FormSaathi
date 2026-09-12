@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.formsaathi.core.FormUiState
 import com.formsaathi.core.FormViewModel
+import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.pdf.OutputFileManager
@@ -26,6 +27,7 @@ fun FormSaathiNavigation(model: FormViewModel) {
     val draft by model.draft.collectAsState()
     val recording by model.recording.collectAsState()
     val busy by model.busy.collectAsState()
+    val transcribing by model.transcribing.collectAsState()
     val voiceError by model.voiceError.collectAsState()
     var languageSelected by rememberSaveable { mutableStateOf(false) }
     var home by rememberSaveable { mutableStateOf(true) }
@@ -48,6 +50,9 @@ fun FormSaathiNavigation(model: FormViewModel) {
         if (granted) {
             model.startVoice()
         } else model.permissionDenied()
+    }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) model.attachPhoto(uri)
     }
     BackHandler(enabled = !home && !busy && !recording) {
         when (state) {
@@ -85,7 +90,10 @@ fun FormSaathiNavigation(model: FormViewModel) {
                         Text(current.stageMessage, Modifier.padding(24.dp))
                     }
                     is FormUiState.Questioning -> {
+                        val photoType = current.currentField.type == FieldType.PHOTO ||
+                            current.currentField.type == FieldType.SIGNATURE
                         if (recording) Text("Recording… tap Stop, or wait up to 10 seconds", Modifier.padding(16.dp))
+                        if (transcribing) Text("Transcribing your answer…", Modifier.padding(16.dp))
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         voiceError?.let { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
                         if (recording) Button(onClick = {
@@ -98,15 +106,19 @@ fun FormSaathiNavigation(model: FormViewModel) {
                             { model.coordinator.previousField() }, model::submit,
                             { model.coordinator.skipCurrentField() },
                             { permission.launch(Manifest.permission.RECORD_AUDIO) },
-                            enabled = !busy && !recording,
-                            canSkip = current.canSkip
+                            enabled = !busy && !recording && !transcribing,
+                            canSkip = current.canSkip,
+                            photoMode = photoType,
+                            photoAttached = photoType && draft.isNotBlank(),
+                            onAttachPhoto = { gallery.launch("image/*") }
                         )
                     }
                     is FormUiState.Reviewing -> {
                         ReviewScreen(
                             current.fields.map { field -> ReviewField(field.sourceLabel,
                                 current.answers[field.id]?.normalizedValue.orEmpty(),
-                                field.confidence < 0.75f, field.type == FieldType.UNKNOWN, field.id) },
+                                field.confidence < 0.75f, field.type == FieldType.UNKNOWN, field.id,
+                                manualStep = current.answers[field.id]?.source == AnswerSource.PHOTO) },
                             current.documents.map { ReviewDocument(it.name, it.requirement) },
                             { model.coordinator.jumpToField(it.fieldId) },
                             { creator.launch("Completed_Form.pdf") },

@@ -40,7 +40,14 @@ class RealVoiceService internal constructor(
         if (bytes.size.toLong() != size) throw VoiceException.InvalidAudio()
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         val samples = FloatArray(buffer.remaining()) { buffer.get().toFloat() / 32768f }
-        inference(samples, language).trim().ifBlank { throw VoiceException.NoSpeech() }
+        val text = inference(samples, language).trim()
+        // Whisper emits the literal "[BLANK_AUDIO]" token when the recording
+        // contains no speech. Accepting it as an answer fills forms with junk,
+        // so it is treated exactly like an empty transcript.
+        if (text.isBlank() || text.equals("[BLANK_AUDIO]", ignoreCase = true)) {
+            throw VoiceException.NoSpeech()
+        }
+        text
     }
 
     override fun close() {
