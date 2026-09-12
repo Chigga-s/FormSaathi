@@ -17,3 +17,7 @@ local.properties
 /app/src/main/assets/models/*.bin
 *.apk
 *.aab
+.idea/
+*.txt
+scratch_test.kts
+app/src/main/cpp/whisper.cpp/

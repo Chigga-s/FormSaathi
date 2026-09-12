@@ -4,6 +4,8 @@
     <!-- Role 3 audio permission for offline voice answering -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+
+
     <!-- No INTERNET permission is declared to ensure strict on-device privacy guarantee -->
 
     <application
