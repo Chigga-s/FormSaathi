@@ -133,6 +133,12 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
         observeCoordinatorState(newCoordinator)
     }
 
+    fun clearSelection() {
+        selectedUri = null
+        selectedFileName = null
+        draftField = null
+    }
+
     /**
      * Backward-compatible entry point for starting a real PDF session.
      */

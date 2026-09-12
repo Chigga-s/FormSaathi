@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -35,13 +36,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.formsaathi.model.SupportedLanguage
 
-private val FormSathiPurple = Color(0xFF39277A)
-private val FormSathiOrange = Color(0xFFFF8A00)
+private val FormSathiOrange = androidx.compose.ui.graphics.Color(0xFFFF8A00)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,8 +56,7 @@ fun LanguageScreen(
     val languages = listOf(
         SupportedLanguage.ENGLISH,
         SupportedLanguage.HINDI,
-        SupportedLanguage.MARATHI,
-
+        SupportedLanguage.MARATHI
     )
 
     Scaffold(
@@ -70,7 +68,7 @@ fun LanguageScreen(
                 title = {
                     Text(
                         text = "Choose Language",
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 },
 
@@ -83,13 +81,13 @@ fun LanguageScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 },
 
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = FormSathiPurple
+                    containerColor = MaterialTheme.colorScheme.primary
                 )
             )
         }
@@ -114,7 +112,7 @@ fun LanguageScreen(
             Text(
                 text = "Select your preferred language",
                 fontSize = 20.sp,
-                color = Color.Black
+                color = MaterialTheme.colorScheme.onBackground
             )
 
             Spacer(
@@ -158,7 +156,7 @@ fun LanguageScreen(
 
                 Text(
                     text = "Continue in ${languageDisplayName(selectedLanguage)}",
-                    color = Color.White,
+                    color = androidx.compose.ui.graphics.Color.White,
                     fontSize = 17.sp
                 )
             }
@@ -190,14 +188,14 @@ private fun LanguageCard(
         border = BorderStroke(
             width = 1.dp,
             color = if (selected) {
-                FormSathiPurple
+                MaterialTheme.colorScheme.primary
             } else {
-                Color.LightGray
+                MaterialTheme.colorScheme.outline
             }
         ),
 
         colors = CardDefaults.cardColors(
-            containerColor = Color.White
+            containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
 
@@ -225,13 +223,16 @@ private fun LanguageCard(
 
                 Text(
                     text = languageDisplayName(language),
-                    fontSize = 18.sp
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Text(
                     text = languageNativeName(language),
                     fontSize = 14.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = 0.65f
+                    )
                 )
             }
         }
@@ -271,5 +272,7 @@ private fun languageNativeName(
 
         SupportedLanguage.MARATHI ->
             "मराठी"
+
+
     }
 }

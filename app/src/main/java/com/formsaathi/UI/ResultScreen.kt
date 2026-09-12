@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
@@ -50,7 +51,7 @@ fun ResultScreen(
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "PDF created successfully",
-                modifier = Modifier.height(72.dp),
+                modifier = Modifier.size(72.dp),
                 tint = FormSathiPurple
             )
 

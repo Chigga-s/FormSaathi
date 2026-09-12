@@ -1,4 +1,4 @@
-package com.formsaathi.UI
+﻿package com.formsaathi.UI
 
 import android.Manifest
 import android.content.Intent
@@ -56,7 +56,9 @@ object Routes {
 @Composable
 fun FormSaathiNavigation(
     model: FormViewModel = viewModel(),
-    outputFileManager: OutputFileManager? = null
+    outputFileManager: OutputFileManager? = null,
+    darkTheme: Boolean = false,
+    onThemeChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -168,8 +170,21 @@ fun FormSaathiNavigation(
             HomeScreen(
                 language = model.language,
                 selectedFileName = model.selectedFileName,
+                darkTheme = darkTheme,
                 onSelectForm = {
                     pdfPicker.launch(arrayOf("application/pdf"))
+                },
+                onChangeLanguage = {
+                    navController.navigate(Routes.LANGUAGE)
+                },
+                onToggleTheme = onThemeChanged,
+                onContinue = {
+                    if (model.selectedUri != null) {
+                        navController.navigate(Routes.PROCESSING)
+                    }
+                },
+                onClearPdf = {
+                    model.clearSelection()
                 },
                 onTrySampleForm = {
                     val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
