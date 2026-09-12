@@ -33,6 +33,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.Switch
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -47,9 +49,9 @@ import com.formsaathi.pdf.SamplePdfFactory
 import kotlinx.coroutines.launch
 
 /**
- * Entry Activity providing an interactive test harness for Role 4.
+ * Entry Activity providing an interactive test harness for Role 4 and integrated Role 2.
  * Demonstrates the complete lifecycle: PDF import, session coordination,
- * conditional rules, dynamic review, and completed PDF generation/sharing.
+ * OCR/mock parsing, conditional rules, dynamic review, and completed PDF generation/sharing.
  * Role 1 will replace the screen composables with their polished UI designs.
  */
 class MainActivity : ComponentActivity() {
@@ -61,7 +63,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         outputFileManager = OutputFileManager(this)
-        // Backed by real PDF generator and mock engines until Role 2 & 3 merge
+        // Backed by real PDF generator and mock engines by default
         coordinator = EngineFactory.createMockCoordinator(
             context = this,
             useRealPdfGenerator = true
@@ -74,7 +76,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     Role4HarnessScreen(
-                        coordinator = coordinator,
+                        initialCoordinator = coordinator,
                         outputFileManager = outputFileManager
                     )
                 }
@@ -85,11 +87,19 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun Role4HarnessScreen(
-    coordinator: FormSaathiCoordinator,
+    initialCoordinator: FormSaathiCoordinator,
     outputFileManager: OutputFileManager
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var useRealFormParser by remember { mutableStateOf(false) }
+    val coordinator = remember(useRealFormParser) {
+        if (useRealFormParser) {
+            EngineFactory.createRealCoordinator(context)
+        } else {
+            initialCoordinator
+        }
+    }
     val uiState by coordinator.uiState.collectAsState()
 
     // SAF Document Picker for Source PDF
@@ -122,13 +132,29 @@ fun Role4HarnessScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "FormSaathi (Role 4 Engine Harness)",
+            text = "FormSaathi (Integration Test Harness)",
             style = MaterialTheme.typography.titleLarge
         )
 
         when (val state = uiState) {
             is FormUiState.Idle -> {
                 Text("Select a government form PDF or start a mock session to test.")
+
+                // Toggle between FakeFormParser and Role 2's RealFormParser (ML Kit OCR)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Switch(
+                        checked = useRealFormParser,
+                        onCheckedChange = { useRealFormParser = it }
+                    )
+                    Text(
+                        text = if (useRealFormParser) "Parser: Role 2 RealFormParser (ML Kit OCR)" else "Parser: FakeFormParser (Mock Fields)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) }) {
                         Text("Pick PDF Form")

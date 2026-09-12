@@ -11,6 +11,14 @@ import com.formsaathi.contracts.FakeVoiceService
 import com.formsaathi.contracts.FormParser
 import com.formsaathi.contracts.QuestionProvider
 import com.formsaathi.contracts.VoiceService
+import com.formsaathi.formengine.AndroidPdfPageRenderer
+import com.formsaathi.formengine.AnswerBoxEstimator
+import com.formsaathi.formengine.FieldMapper
+import com.formsaathi.formengine.LabelDetector
+import com.formsaathi.formengine.MlKitOcrEngine
+import com.formsaathi.formengine.OcrScript
+import com.formsaathi.formengine.RealFormParser
+import com.formsaathi.formengine.RequirementExtractor
 import com.formsaathi.pdf.AndroidCompletedPdfGenerator
 
 /**
@@ -20,13 +28,38 @@ import com.formsaathi.pdf.AndroidCompletedPdfGenerator
 object EngineFactory {
 
     /**
-     * Creates a coordinator backed entirely by deterministic mocks.
-     * Used by Role 1 (UI) and integration tests to run the full app flow without native/OCR dependencies.
+     * Creates a RealFormParser instance using Role 2's OCR engine and heuristic extractors.
+     */
+    fun createRealFormParser(
+        context: Context,
+        ocrScript: OcrScript = OcrScript.LATIN
+    ): RealFormParser {
+        return RealFormParser(
+            pageRenderer = AndroidPdfPageRenderer(context),
+            ocrEngine = MlKitOcrEngine(),
+            labelDetector = LabelDetector(),
+            fieldMapper = FieldMapper(),
+            answerBoxEstimator = AnswerBoxEstimator(),
+            requirementExtractor = RequirementExtractor(),
+            ocrScript = ocrScript
+        )
+    }
+
+    /**
+     * Creates a coordinator backed by mocks, with options to enable real PDF generator (Role 4)
+     * and/or real FormParser (Role 2).
      */
     fun createMockCoordinator(
         context: Context? = null,
-        useRealPdfGenerator: Boolean = false
+        useRealPdfGenerator: Boolean = false,
+        useRealFormParser: Boolean = false
     ): FormSaathiCoordinator {
+        val parser: FormParser = if (useRealFormParser && context != null) {
+            createRealFormParser(context)
+        } else {
+            FakeFormParser()
+        }
+
         val pdfGen: CompletedPdfGenerator = if (useRealPdfGenerator && context != null) {
             AndroidCompletedPdfGenerator(context)
         } else {
@@ -34,7 +67,7 @@ object EngineFactory {
         }
 
         return FormSaathiCoordinator(
-            formParser = FakeFormParser(),
+            formParser = parser,
             questionProvider = FakeQuestionProvider(),
             voiceService = FakeVoiceService(),
             answerProcessor = FakeAnswerProcessor(),
@@ -49,10 +82,10 @@ object EngineFactory {
      */
     fun createRealCoordinator(
         context: Context,
-        formParser: FormParser,
-        questionProvider: QuestionProvider,
-        voiceService: VoiceService,
-        answerProcessor: AnswerProcessor,
+        formParser: FormParser = createRealFormParser(context),
+        questionProvider: QuestionProvider = FakeQuestionProvider(),
+        voiceService: VoiceService = FakeVoiceService(),
+        answerProcessor: AnswerProcessor = FakeAnswerProcessor(),
         pdfGenerator: CompletedPdfGenerator = AndroidCompletedPdfGenerator(context),
         conversationEngine: ConversationEngine = ConversationEngine()
     ): FormSaathiCoordinator {
