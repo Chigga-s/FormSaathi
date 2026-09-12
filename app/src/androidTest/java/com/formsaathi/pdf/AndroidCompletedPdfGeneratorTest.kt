@@ -6,8 +6,11 @@ import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.formsaathi.contracts.FakeFormParser
+import com.formsaathi.core.EngineFactory
+import com.formsaathi.core.FormUiState
 import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.FormAnswer
+import com.formsaathi.model.SupportedLanguage
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -114,6 +117,11 @@ class AndroidCompletedPdfGeneratorTest {
         assertTrue("Output file must exist", outputFile.exists())
         assertTrue("Output file must be non-empty", outputFile.length() > 0)
 
+        val externalOut = File(context.getExternalFilesDir(null), "completed_output.pdf")
+        outputFile.copyTo(externalOut, overwrite = true)
+        val externalSrc = File(context.getExternalFilesDir(null), "source_input.pdf")
+        sourceFile.copyTo(externalSrc, overwrite = true)
+
         // 7. Verify output can be reopened by PdfRenderer with exactly 2 pages in original order
         ParcelFileDescriptor.open(outputFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
             val renderer = PdfRenderer(pfd)
@@ -123,15 +131,121 @@ class AndroidCompletedPdfGeneratorTest {
                 // Page 0 (First page in order)
                 renderer.openPage(0).use { page0 ->
                     assertEquals("First page index must be 0", 0, page0.index)
-                    assertTrue("Page 0 width must be positive", page0.width > 0)
-                    assertTrue("Page 0 height must be positive", page0.height > 0)
+                    assertEquals("Page 0 width must be 595pt (A4 bounds)", 595, page0.width)
+                    assertEquals("Page 0 height must be 842pt (A4 bounds)", 842, page0.height)
+
+                    val bmp0 = android.graphics.Bitmap.createBitmap(page0.width, page0.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    page0.render(bmp0, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                    // Verify Page 0 header is visible and not cropped
+                    var p0HeaderDark = 0
+                    for (x in 50 until 450) {
+                        for (y in 60 until 95) {
+                            val pixel = bmp0.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) p0HeaderDark++
+                        }
+                    }
+                    assertTrue("Page 0 header must be visible and uncropped (found $p0HeaderDark dark pixels)", p0HeaderDark > 50)
+
+                    // Verify Page 0 footer is visible and not cropped
+                    var p0FooterDark = 0
+                    for (x in 200 until 400) {
+                        for (y in 780 until 820) {
+                            val pixel = bmp0.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 150 &&
+                                android.graphics.Color.green(pixel) < 150 &&
+                                android.graphics.Color.blue(pixel) < 150) p0FooterDark++
+                        }
+                    }
+                    assertTrue("Page 0 footer must be visible and uncropped (found $p0FooterDark dark pixels)", p0FooterDark > 10)
+
+                    // Verify Current Address box contains drawn copied address text (box y is 0.75..0.83 * 842 = 631..699)
+                    var currAddrDark = 0
+                    for (x in 70 until 450) {
+                        for (y in 635 until 695) {
+                            val pixel = bmp0.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) currAddrDark++
+                        }
+                    }
+                    assertTrue("Current Address box must contain drawn copied answer text (found $currAddrDark dark pixels)", currAddrDark > 30)
+
+                    bmp0.recycle()
                 }
 
                 // Page 1 (Second page in order)
                 renderer.openPage(1).use { page1 ->
                     assertEquals("Second page index must be 1", 1, page1.index)
-                    assertTrue("Page 1 width must be positive", page1.width > 0)
-                    assertTrue("Page 1 height must be positive", page1.height > 0)
+                    assertEquals("Page 1 width must be 595pt (A4 bounds)", 595, page1.width)
+                    assertEquals("Page 1 height must be 842pt (A4 bounds)", 842, page1.height)
+
+                    val bmp1 = android.graphics.Bitmap.createBitmap(page1.width, page1.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    page1.render(bmp1, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                    // Check top region (header around y = 60..95)
+                    var headerDarkPixels = 0
+                    for (x in 50 until 450) {
+                        for (y in 60 until 95) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) headerDarkPixels++
+                        }
+                    }
+                    assertTrue("Page 1 header must be visible and uncropped (found $headerDarkPixels dark pixels)", headerDarkPixels > 50)
+
+                    // Check bottom region (footer around y = 780..820)
+                    var footerDarkPixels = 0
+                    for (x in 200 until 400) {
+                        for (y in 780 until 820) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 150 &&
+                                android.graphics.Color.green(pixel) < 150 &&
+                                android.graphics.Color.blue(pixel) < 150) footerDarkPixels++
+                        }
+                    }
+                    assertTrue("Page 1 footer must be visible and uncropped (found $footerDarkPixels dark pixels)", footerDarkPixels > 10)
+
+                    // Check Category label region (x = 60..208, y = 126..152) has label content
+                    var catLabelDark = 0
+                    for (x in 60 until 205) {
+                        for (y in 128 until 150) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) catLabelDark++
+                        }
+                    }
+                    assertTrue("Category label must be drawn inside label region (found $catLabelDark dark pixels)", catLabelDark > 20)
+
+                    // Check Category answer region (x = 227..416, y = 126..152) has answer content
+                    var catAnswerDark = 0
+                    for (x in 230 until 410) {
+                        for (y in 128 until 150) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) catAnswerDark++
+                        }
+                    }
+                    assertTrue("Category answer box must contain answer text (found $catAnswerDark dark pixels)", catAnswerDark > 20)
+
+                    // Check safety gap (x = 210..224, y = 128..150): No collision/crowding into answer box
+                    var catGapDark = 0
+                    for (x in 210 until 225) {
+                        for (y in 128 until 150) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) catGapDark++
+                        }
+                    }
+                    assertEquals("Category label text must not collide or crowd into answer box gap", 0, catGapDark)
+
+                    bmp1.recycle()
                 }
             } finally {
                 renderer.close()
@@ -162,5 +276,204 @@ class AndroidCompletedPdfGeneratorTest {
             "Answers must contain page-two 'field_annual_income' (found keys: ${answers.keys})",
             answers.containsKey("field_annual_income") && !answers["field_annual_income"]?.normalizedValue.isNullOrBlank()
         )
+    }
+
+    /**
+     * End-to-end manual flow verification test:
+     * 1. Start Quick Mock Session with SamplePdfFactory source PDF.
+     * 2. Enter permanent address.
+     * 3. Answer 'yes' to same-as-permanent address.
+     * 4. Confirm Current Address is skipped in question sequence.
+     * 5. Confirm it appears in review as COPIED_BY_RULE.
+     * 6. Generate completed PDF with production AndroidCompletedPdfGenerator.
+     * 7. Confirm Current Address is filled on Page 0.
+     * 8. Confirm both Page 1 and Page 2 headers/footers are fully visible.
+     * 9. Confirm Category label does not collide with Category answer box.
+     */
+    @Test
+    fun testEndToEndMockFlowWithSameAddressCopyAndCompletedPdfRendering() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val cacheDir = context.cacheDir
+
+        val coordinator = EngineFactory.createMockCoordinator(
+            context = context,
+            useRealPdfGenerator = true
+        )
+
+        val sampleFile = SamplePdfFactory.createSamplePdf(cacheDir)
+        coordinator.startSession(Uri.fromFile(sampleFile), SupportedLanguage.ENGLISH)
+
+        // Answer initial questions
+        assertTrue(coordinator.submitAnswer("Aarav Sharma", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("Rajesh Sharma", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("15/08/1995", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("Male", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("9876543210", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("aarav@example.com", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("123456789012", AnswerSource.TYPED))
+
+        // Step: Enter permanent address
+        var qState = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_permanent_address", qState.currentField.id)
+        assertTrue(coordinator.submitAnswer("Flat 101, Galaxy Apts, Pune", AnswerSource.TYPED))
+
+        // Step: Answer 'yes' to SAME_AS_PERMANENT_ADDRESS
+        qState = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_same_as_permanent", qState.currentField.id)
+        assertTrue(coordinator.submitAnswer("yes", AnswerSource.TYPED))
+
+        // Step: Confirm CURRENT_ADDRESS is skipped in questions flow (lands directly on Category)
+        qState = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_category", qState.currentField.id)
+
+        // Answer remaining fields
+        assertTrue(coordinator.submitAnswer("General", AnswerSource.TYPED))
+        assertTrue(coordinator.submitAnswer("500000", AnswerSource.TYPED))
+
+        // Step: Confirm transition to Review screen
+        val reviewState = coordinator.uiState.value as FormUiState.Reviewing
+
+        // Step: Confirm CURRENT_ADDRESS appears in review as COPIED_BY_RULE with permanent address value
+        val copiedAddrAnswer = reviewState.answers["field_current_address"]
+        assertNotNull("Current Address must appear in review", copiedAddrAnswer)
+        assertEquals("Flat 101, Galaxy Apts, Pune", copiedAddrAnswer!!.rawValue)
+        assertEquals(AnswerSource.COPIED_BY_RULE, copiedAddrAnswer.source)
+
+        // Step: Generate completed PDF
+        val completedPdfFile = File(cacheDir, "e2e_completed_output.pdf")
+        if (completedPdfFile.exists()) completedPdfFile.delete()
+        coordinator.generatePdf(Uri.fromFile(completedPdfFile))
+
+        val completedState = coordinator.uiState.value
+        assertTrue("Expected Completed state, got: $completedState", completedState is FormUiState.Completed)
+        assertTrue("Completed PDF file must exist on disk", completedPdfFile.exists())
+        assertTrue("Completed PDF file must be non-empty", completedPdfFile.length() > 0)
+
+        // Reopen generated PDF and verify rendered content
+        ParcelFileDescriptor.open(completedPdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+            val renderer = PdfRenderer(pfd)
+            try {
+                assertEquals(2, renderer.pageCount)
+
+                // Page 0 verification
+                renderer.openPage(0).use { p0 ->
+                    assertEquals(595, p0.width)
+                    assertEquals(842, p0.height)
+
+                    val bmp0 = android.graphics.Bitmap.createBitmap(p0.width, p0.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    p0.render(bmp0, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                    // Page 1 header visible
+                    var p0Header = 0
+                    for (x in 50 until 450) {
+                        for (y in 60 until 95) {
+                            val pixel = bmp0.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) p0Header++
+                        }
+                    }
+                    assertTrue("Page 1 header must be visible and uncropped", p0Header > 50)
+
+                    // Page 1 footer visible
+                    var p0Footer = 0
+                    for (x in 200 until 400) {
+                        for (y in 780 until 820) {
+                            val pixel = bmp0.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 150 &&
+                                android.graphics.Color.green(pixel) < 150 &&
+                                android.graphics.Color.blue(pixel) < 150) p0Footer++
+                        }
+                    }
+                    assertTrue("Page 1 footer must be visible and uncropped", p0Footer > 10)
+
+                    // Current Address box contains copied text
+                    var currAddrDark = 0
+                    for (x in 70 until 450) {
+                        for (y in 635 until 695) {
+                            val pixel = bmp0.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) currAddrDark++
+                        }
+                    }
+                    assertTrue("Current Address box on page 0 must be filled with copied address", currAddrDark > 30)
+
+                    bmp0.recycle()
+                }
+
+                // Page 1 verification (Page 2 of document)
+                renderer.openPage(1).use { p1 ->
+                    assertEquals(595, p1.width)
+                    assertEquals(842, p1.height)
+
+                    val bmp1 = android.graphics.Bitmap.createBitmap(p1.width, p1.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    p1.render(bmp1, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                    // Page 2 header visible
+                    var p1Header = 0
+                    for (x in 50 until 450) {
+                        for (y in 60 until 95) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) p1Header++
+                        }
+                    }
+                    assertTrue("Page 2 header must be visible and uncropped", p1Header > 50)
+
+                    // Page 2 footer visible
+                    var p1Footer = 0
+                    for (x in 200 until 400) {
+                        for (y in 780 until 820) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 150 &&
+                                android.graphics.Color.green(pixel) < 150 &&
+                                android.graphics.Color.blue(pixel) < 150) p1Footer++
+                        }
+                    }
+                    assertTrue("Page 2 footer must be visible and uncropped", p1Footer > 10)
+
+                    // Category label and answer exist without collision
+                    var catLabelDark = 0
+                    for (x in 60 until 205) {
+                        for (y in 128 until 150) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) catLabelDark++
+                        }
+                    }
+                    assertTrue("Category label must be drawn inside label region", catLabelDark > 20)
+
+                    var catAnswerDark = 0
+                    for (x in 230 until 410) {
+                        for (y in 128 until 150) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) catAnswerDark++
+                        }
+                    }
+                    assertTrue("Category answer box must contain answer text", catAnswerDark > 20)
+
+                    // Zero dark pixels in the safety gap confirms no collision
+                    var catGapDark = 0
+                    for (x in 210 until 225) {
+                        for (y in 128 until 150) {
+                            val pixel = bmp1.getPixel(x, y)
+                            if (android.graphics.Color.red(pixel) < 100 &&
+                                android.graphics.Color.green(pixel) < 100 &&
+                                android.graphics.Color.blue(pixel) < 100) catGapDark++
+                        }
+                    }
+                    assertEquals("Category label text must not touch or crowd into the Category answer box", 0, catGapDark)
+
+                    bmp1.recycle()
+                }
+            } finally {
+                renderer.close()
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ import com.formsaathi.contracts.FormParser
 import com.formsaathi.contracts.QuestionProvider
 import com.formsaathi.contracts.VoiceService
 import com.formsaathi.model.AnswerSource
+import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormAnswer
 import com.formsaathi.model.FormField
 import com.formsaathi.model.SupportedLanguage
@@ -130,10 +131,36 @@ class FormSaathiCoordinator(
                     session.setAnswer(autoAnswer)
                 }
 
+                // Check and remove answers if a conditional rule was reversed (e.g. yes -> no)
+                val toRemove = conversationEngine.evaluateAnswersToRemove(
+                    fieldJustAnswered = currentField,
+                    answer = answer,
+                    fields = session.parsedForm.fields,
+                    currentAnswers = session.answers
+                )
+                for (removeId in toRemove) {
+                    session.removeAnswer(removeId)
+                }
+
                 // Advance to next field or transition to review
                 val hasNext = session.advance(conversationEngine)
                 if (hasNext) {
-                    emitCurrentQuestion(session, null)
+                    val nextField = session.getCurrentField()
+                    val recoverableNotice = if (nextField?.type == FieldType.CURRENT_ADDRESS) {
+                        val sameAsPerm = session.answers.values.firstOrNull { ans ->
+                            session.parsedForm.fields.any { f -> f.id == ans.fieldId && f.type == FieldType.SAME_AS_PERMANENT_ADDRESS }
+                        }
+                        if (sameAsPerm?.normalizedValue.equals("yes", ignoreCase = true)) {
+                            val permAns = session.answers.values.firstOrNull { ans ->
+                                session.parsedForm.fields.any { f -> f.id == ans.fieldId && f.type == FieldType.PERMANENT_ADDRESS }
+                            }
+                            if (permAns == null || permAns.rawValue.isBlank()) {
+                                "Permanent address was not provided to copy. Please enter your current address."
+                            } else null
+                        } else null
+                    } else null
+
+                    emitCurrentQuestion(session, recoverableNotice)
                 } else {
                     emitReviewScreen(session)
                 }
@@ -209,14 +236,35 @@ class FormSaathiCoordinator(
         val validation = answerProcessor.validate(field.type, normalized)
 
         if (validation is ValidationResult.Valid) {
-            session.setAnswer(
-                FormAnswer(
-                    fieldId = fieldId,
-                    rawValue = newRawText,
-                    normalizedValue = normalized,
-                    source = AnswerSource.TYPED
-                )
+            val answer = FormAnswer(
+                fieldId = fieldId,
+                rawValue = newRawText,
+                normalizedValue = normalized,
+                source = AnswerSource.TYPED
             )
+            session.setAnswer(answer)
+
+            // Propagate automated side-effects or removals (e.g. updating permanent address or toggling same-as)
+            val automated = conversationEngine.evaluateAutomatedAnswers(
+                fieldJustAnswered = field,
+                answer = answer,
+                fields = session.parsedForm.fields,
+                currentAnswers = session.answers
+            )
+            for (autoAnswer in automated) {
+                session.setAnswer(autoAnswer)
+            }
+
+            val toRemove = conversationEngine.evaluateAnswersToRemove(
+                fieldJustAnswered = field,
+                answer = answer,
+                fields = session.parsedForm.fields,
+                currentAnswers = session.answers
+            )
+            for (removeId in toRemove) {
+                session.removeAnswer(removeId)
+            }
+
             emitReviewScreen(session)
         }
 

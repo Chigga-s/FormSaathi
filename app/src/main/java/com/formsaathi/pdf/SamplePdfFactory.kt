@@ -32,6 +32,12 @@ object SamplePdfFactory {
         textSize = 11f
     }
 
+    private val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(80, 80, 80)
+        textSize = 10f
+        textAlign = Paint.Align.CENTER
+    }
+
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(180, 180, 180)
         strokeWidth = 0.8f
@@ -78,8 +84,8 @@ object SamplePdfFactory {
         canvas.drawColor(Color.WHITE)
 
         // Header
-        canvas.drawText("Government Application Form — Page 1", 60f, 80f, headerPaint)
-        canvas.drawLine(60f, 90f, 535f, 90f, linePaint)
+        canvas.drawText("Government Application Form — Page 1", 60f, 75f, headerPaint)
+        canvas.drawLine(60f, 85f, 535f, 85f, linePaint)
 
         // Field rows matching FakeFormParser page 0 normalized coordinates exactly:
         // 1. Full Name: label (0.10, 0.15, 0.40, 0.18), answer (0.42, 0.15, 0.90, 0.18)
@@ -163,7 +169,7 @@ object SamplePdfFactory {
         canvas.drawLine(currLabelBox.left * PAGE_WIDTH, currSepY, 535f, currSepY, linePaint)
 
         // Footer
-        canvas.drawText("Page 1 of 2", (PAGE_WIDTH / 2f) - 25f, PAGE_HEIGHT - 30f, labelPaint)
+        canvas.drawText("Page 1 of 2", PAGE_WIDTH / 2f, PAGE_HEIGHT - 42f, footerPaint)
 
         document.finishPage(page)
     }
@@ -175,8 +181,8 @@ object SamplePdfFactory {
 
         canvas.drawColor(Color.WHITE)
 
-        canvas.drawText("Government Application Form — Page 2", 60f, 80f, headerPaint)
-        canvas.drawLine(60f, 90f, 535f, 90f, linePaint)
+        canvas.drawText("Government Application Form — Page 2", 60f, 75f, headerPaint)
+        canvas.drawLine(60f, 85f, 535f, 85f, linePaint)
 
         // 11. Category: label (0.10, 0.15, 0.35, 0.18), answer (0.38, 0.15, 0.70, 0.18)
         drawFieldRow(
@@ -209,13 +215,14 @@ object SamplePdfFactory {
         canvas.drawText("Signature:", 60f, 0.75f * PAGE_HEIGHT, labelPaint)
         canvas.drawRect(60f, 0.76f * PAGE_HEIGHT, 250f, 0.84f * PAGE_HEIGHT, boxPaint)
 
-        canvas.drawText("Page 2 of 2", (PAGE_WIDTH / 2f) - 25f, PAGE_HEIGHT - 30f, labelPaint)
+        canvas.drawText("Page 2 of 2", PAGE_WIDTH / 2f, PAGE_HEIGHT - 42f, footerPaint)
 
         document.finishPage(page)
     }
 
     /**
      * Draws a single-line field row using exact NormalizedRects for label and answer box.
+     * Prevents label text from crowding or colliding with the answer box by safely wrapping or adjusting font size.
      */
     private fun drawFieldRow(
         canvas: Canvas,
@@ -223,8 +230,35 @@ object SamplePdfFactory {
         labelBox: NormalizedRect,
         answerBox: NormalizedRect
     ) {
-        val labelY = (labelBox.top * PAGE_HEIGHT) + 16f
-        canvas.drawText(label, labelBox.left * PAGE_WIDTH, labelY, labelPaint)
+        val labelLeft = labelBox.left * PAGE_WIDTH
+        val availableWidth = (answerBox.left * PAGE_WIDTH) - labelLeft - 8f
+        val paint = Paint(labelPaint)
+
+        if (paint.measureText(label) > availableWidth) {
+            paint.textSize = 9f
+            if (paint.measureText(label) > availableWidth) {
+                // Wrap safely across two lines within the label's vertical bounds
+                val slashIdx = label.indexOf(" / ")
+                val (line1, line2) = if (slashIdx != -1) {
+                    label.substring(0, slashIdx) to label.substring(slashIdx + 1)
+                } else {
+                    val mid = label.length / 2
+                    val space = label.lastIndexOf(' ', mid).let { if (it == -1) mid else it }
+                    label.substring(0, space) to label.substring(space).trim()
+                }
+                val line1Y = (labelBox.top * PAGE_HEIGHT) + 11f
+                val line2Y = (labelBox.top * PAGE_HEIGHT) + 21f
+                canvas.drawText(line1, labelLeft, line1Y, paint)
+                canvas.drawText(line2, labelLeft, line2Y, paint)
+            } else {
+                val labelY = (labelBox.top * PAGE_HEIGHT) + 15f
+                canvas.drawText(label, labelLeft, labelY, paint)
+            }
+        } else {
+            val labelY = (labelBox.top * PAGE_HEIGHT) + 16f
+            canvas.drawText(label, labelLeft, labelY, paint)
+        }
+
         drawAnswerBox(canvas, answerBox)
         val sepY = (maxOf(labelBox.bottom, answerBox.bottom) * PAGE_HEIGHT) + 4f
         canvas.drawLine(labelBox.left * PAGE_WIDTH, sepY, 535f, sepY, linePaint)

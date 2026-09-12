@@ -104,8 +104,10 @@ class FormSessionTest {
         )
         val addrSession = FormSession(parsed, SupportedLanguage.ENGLISH)
 
-        // Set "same as permanent" to yes — this skips f4 (current address)
+        // Set permanent address and "same as permanent" to yes — this copies and skips f4 (current address)
+        addrSession.setAnswer(FormAnswer("f2", "123 Main St", "123 Main St", AnswerSource.TYPED))
         addrSession.setAnswer(FormAnswer("f3", "yes", "yes", AnswerSource.TYPED))
+        addrSession.setAnswer(FormAnswer("f4", "123 Main St", "123 Main St", AnswerSource.COPIED_BY_RULE))
 
         // Position at field index 0 (Name) → active position should be 0
         assertEquals(0, addrSession.getActiveQuestionPosition(conversationEngine))

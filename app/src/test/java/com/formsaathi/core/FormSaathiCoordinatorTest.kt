@@ -96,4 +96,118 @@ class FormSaathiCoordinatorTest {
         assertTrue("Expected Completed state, got $state", state is FormUiState.Completed)
         assertTrue(fakePdfGen.wasGenerateCalled)
     }
+
+    @Test
+    fun testSameAddressSequenceCopiesSkipsAndAppearsInReviewAndPdf() = runBlocking {
+        coordinator.startSession(mockUri, SupportedLanguage.ENGLISH)
+
+        // Jump directly to permanent address
+        coordinator.jumpToField("field_permanent_address")
+        var state = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_permanent_address", state.currentField.id)
+
+        // 1. Enter permanent address
+        val permAccepted = coordinator.submitAnswer("Flat 402, Lotus Heights, Bengaluru", AnswerSource.TYPED)
+        assertTrue("Permanent address answer should be accepted", permAccepted)
+
+        // Flow lands on same-as-permanent-address
+        state = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_same_as_permanent", state.currentField.id)
+
+        // 2. Answer 'yes' to same-address
+        val sameAccepted = coordinator.submitAnswer("yes", AnswerSource.TYPED)
+        assertTrue("Same-as answer should be accepted", sameAccepted)
+
+        // 3. Flow must skip current-address and advance directly to category
+        state = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_category", state.currentField.id)
+
+        // 4. Transition to Review
+        coordinator.goToReview()
+        val reviewState = coordinator.uiState.value as FormUiState.Reviewing
+
+        // 5. Review contains copied current address answer marked COPIED_BY_RULE
+        val currAnswer = reviewState.answers["field_current_address"]
+        assertNotNull("Current address must exist in review answers", currAnswer)
+        assertEquals("Flat 402, Lotus Heights, Bengaluru", currAnswer!!.rawValue)
+        assertEquals("Flat 402, Lotus Heights, Bengaluru", currAnswer.normalizedValue)
+        assertEquals(AnswerSource.COPIED_BY_RULE, currAnswer.source)
+
+        // 6. Generate PDF and verify copied answer is passed to generator
+        val outputUri = mock(Uri::class.java)
+        coordinator.generatePdf(outputUri)
+        assertTrue(fakePdfGen.wasGenerateCalled)
+        val generatedCurrAnswer = fakePdfGen.lastAnswers["field_current_address"]
+        assertNotNull("Current address answer must be delivered to PDF generator", generatedCurrAnswer)
+        assertEquals("Flat 402, Lotus Heights, Bengaluru", generatedCurrAnswer!!.rawValue)
+        assertEquals(AnswerSource.COPIED_BY_RULE, generatedCurrAnswer.source)
+    }
+
+    @Test
+    fun testSameAddressYesWhenPermanentAddressMissingDoesNotSkipCurrentAddress() = runBlocking {
+        coordinator.startSession(mockUri, SupportedLanguage.ENGLISH)
+
+        // Jump directly to same-as-permanent without entering permanent address
+        coordinator.jumpToField("field_same_as_permanent")
+        var state = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_same_as_permanent", state.currentField.id)
+
+        // Answer 'yes'
+        val sameAccepted = coordinator.submitAnswer("yes", AnswerSource.TYPED)
+        assertTrue(sameAccepted)
+
+        // Because permanent address is missing, current address CANNOT be copied and MUST NOT be skipped
+        state = coordinator.uiState.value as FormUiState.Questioning
+        assertEquals("field_current_address", state.currentField.id)
+        assertNotNull("Expected recoverable error/notice for missing permanent address", state.validationError)
+
+        // User can recover by entering current address manually
+        val currAccepted = coordinator.submitAnswer("789 MG Road, Pune", AnswerSource.TYPED)
+        assertTrue(currAccepted)
+
+        coordinator.goToReview()
+        val reviewState = coordinator.uiState.value as FormUiState.Reviewing
+        val currAnswer = reviewState.answers["field_current_address"]
+        assertNotNull(currAnswer)
+        assertEquals("789 MG Road, Pune", currAnswer!!.rawValue)
+        assertEquals(AnswerSource.TYPED, currAnswer.source)
+    }
+
+    @Test
+    fun testReviewUpdatingPermanentAddressSyncsCurrentAddressWhenSameAddressIsYes() = runBlocking {
+        coordinator.startSession(mockUri, SupportedLanguage.ENGLISH)
+        coordinator.jumpToField("field_permanent_address")
+        coordinator.submitAnswer("Initial Address 1", AnswerSource.TYPED)
+        coordinator.submitAnswer("yes", AnswerSource.TYPED)
+        coordinator.goToReview()
+
+        var reviewState = coordinator.uiState.value as FormUiState.Reviewing
+        assertEquals("Initial Address 1", reviewState.answers["field_current_address"]?.rawValue)
+
+        // Update permanent address in review
+        coordinator.updateAnswerInReview("field_permanent_address", "Updated Address 2")
+
+        reviewState = coordinator.uiState.value as FormUiState.Reviewing
+        assertEquals("Updated Address 2", reviewState.answers["field_permanent_address"]?.rawValue)
+        assertEquals("Updated Address 2", reviewState.answers["field_current_address"]?.rawValue)
+        assertEquals(AnswerSource.COPIED_BY_RULE, reviewState.answers["field_current_address"]?.source)
+    }
+
+    @Test
+    fun testReviewTogglingSameAddressToNoRemovesCopiedCurrentAddress() = runBlocking {
+        coordinator.startSession(mockUri, SupportedLanguage.ENGLISH)
+        coordinator.jumpToField("field_permanent_address")
+        coordinator.submitAnswer("Initial Address 1", AnswerSource.TYPED)
+        coordinator.submitAnswer("yes", AnswerSource.TYPED)
+        coordinator.goToReview()
+
+        var reviewState = coordinator.uiState.value as FormUiState.Reviewing
+        assertNotNull(reviewState.answers["field_current_address"])
+
+        // Toggle same-as to 'no'
+        coordinator.updateAnswerInReview("field_same_as_permanent", "no")
+
+        reviewState = coordinator.uiState.value as FormUiState.Reviewing
+        assertNull("Copied current address should be removed when same-as becomes no", reviewState.answers["field_current_address"])
+    }
 }

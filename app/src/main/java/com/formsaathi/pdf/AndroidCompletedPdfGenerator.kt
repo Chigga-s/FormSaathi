@@ -55,10 +55,9 @@ class AndroidCompletedPdfGenerator(
             for (pageIndex in 0 until totalPages) {
                 val rendererPage = pdfRenderer.openPage(pageIndex)
 
-                // Match with PageInfo if parsed by Role 2, otherwise fallback to renderer dimensions
-                val pageInfo = parsedForm.pages.firstOrNull { it.pageIndex == pageIndex }
-                val pageWidthPoints = pageInfo?.pdfWidthPoints ?: rendererPage.width.toFloat()
-                val pageHeightPoints = pageInfo?.pdfHeightPoints ?: rendererPage.height.toFloat()
+                // Always use actual PDF page dimensions from PdfRenderer
+                val pageWidthPoints = rendererPage.width.toFloat()
+                val pageHeightPoints = rendererPage.height.toFloat()
 
                 // Compute render scale capped by memory budget
                 val desiredScale = 2.0f
@@ -73,7 +72,7 @@ class AndroidCompletedPdfGenerator(
                 val bmpHeight = (pageHeightPoints * effectiveScale).toInt().coerceAtLeast(1)
 
                 val pageBitmap = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888)
-                rendererPage.render(pageBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                rendererPage.render(pageBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
                 // Start PdfDocument page
                 val pageConfig = PdfDocument.PageInfo.Builder(

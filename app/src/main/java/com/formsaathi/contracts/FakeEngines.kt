@@ -357,6 +357,8 @@ class FakeCompletedPdfGenerator : CompletedPdfGenerator {
         private set
     var lastAnswersCount: Int = 0
         private set
+    var lastAnswers: Map<String, FormAnswer> = emptyMap()
+        private set
 
     override suspend fun generate(
         sourceUri: Uri,
@@ -367,6 +369,7 @@ class FakeCompletedPdfGenerator : CompletedPdfGenerator {
         wasGenerateCalled = true
         lastSourceUri = sourceUri
         lastAnswersCount = answers.size
+        lastAnswers = answers
         return GenerationResult()
     }
 }

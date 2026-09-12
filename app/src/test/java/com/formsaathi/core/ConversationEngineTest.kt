@@ -113,14 +113,28 @@ class ConversationEngineTest {
     }
 
     @Test
-    fun testCurrentAddressSkippedWhenSameAddressIsYes() {
+    fun testCurrentAddressSkippedWhenSameAddressIsYesAndCopiedAnswerExists() {
         val currentField = sampleFields.first { it.type == FieldType.CURRENT_ADDRESS }
+        val answers = mapOf(
+            "f_perm_addr" to FormAnswer("f_perm_addr", "123 Main St", "123 Main St", AnswerSource.TYPED),
+            "f_same_addr" to FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED),
+            "f_curr_addr" to FormAnswer("f_curr_addr", "123 Main St", "123 Main St", AnswerSource.COPIED_BY_RULE)
+        )
+
+        val shouldSkip = engine.shouldSkipField(currentField, sampleFields, answers)
+        assertTrue(shouldSkip)
+    }
+
+    @Test
+    fun testCurrentAddressNotSkippedWhenPermanentAddressMissingEvenIfSameAddressYes() {
+        val currentField = sampleFields.first { it.type == FieldType.CURRENT_ADDRESS }
+        // Permanent address missing, so no copied answer could be created
         val answers = mapOf(
             "f_same_addr" to FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED)
         )
 
         val shouldSkip = engine.shouldSkipField(currentField, sampleFields, answers)
-        assertTrue(shouldSkip)
+        assertFalse("Current address must NOT be skipped if permanent address is missing", shouldSkip)
     }
 
     @Test
@@ -135,13 +149,25 @@ class ConversationEngineTest {
     }
 
     @Test
-    fun testGetNextFieldIndexSkipsCurrentAddressDirectlyToMobile() {
+    fun testGetNextFieldIndexSkipsCurrentAddressDirectlyToMobileWhenCopied() {
         val answers = mapOf(
-            "f_same_addr" to FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED)
+            "f_perm_addr" to FormAnswer("f_perm_addr", "123 Main St", "123 Main St", AnswerSource.TYPED),
+            "f_same_addr" to FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED),
+            "f_curr_addr" to FormAnswer("f_curr_addr", "123 Main St", "123 Main St", AnswerSource.COPIED_BY_RULE)
         )
         // From same address question (index 2), next should skip current address (index 3) and land on mobile (index 4)
         val nextIndex = engine.getNextFieldIndex(fromIndex = 2, fields = sampleFields, currentAnswers = answers)
         assertEquals(4, nextIndex)
+    }
+
+    @Test
+    fun testGetNextFieldIndexDoesNotSkipCurrentAddressWhenPermanentAddressMissing() {
+        val answers = mapOf(
+            "f_same_addr" to FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED)
+        )
+        // From same address question (index 2), next should NOT skip current address (index 3) because copy was impossible
+        val nextIndex = engine.getNextFieldIndex(fromIndex = 2, fields = sampleFields, currentAnswers = answers)
+        assertEquals(3, nextIndex)
     }
 
     @Test
@@ -189,5 +215,48 @@ class ConversationEngineTest {
         // Copied answer should have the permanent address content, not the same-as answer
         assertEquals("42 MG Road, Pune 411001", copied.rawValue)
         assertEquals("42 MG Road, Pune 411001", copied.normalizedValue)
+    }
+
+    @Test
+    fun testPermanentAddressUpdateSyncsCurrentAddressIfSameAddressYes() {
+        val sameAddrAnswer = FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED)
+        val answers = mapOf("f_same_addr" to sameAddrAnswer)
+        val permField = sampleFields.first { it.type == FieldType.PERMANENT_ADDRESS }
+        val updatedPermAnswer = FormAnswer("f_perm_addr", "New Street 99, Delhi", "New Street 99, Delhi", AnswerSource.TYPED)
+
+        val automated = engine.evaluateAutomatedAnswers(permField, updatedPermAnswer, sampleFields, answers)
+        assertEquals(1, automated.size)
+        val copied = automated.first()
+        assertEquals("f_curr_addr", copied.fieldId)
+        assertEquals("New Street 99, Delhi", copied.rawValue)
+        assertEquals("New Street 99, Delhi", copied.normalizedValue)
+        assertEquals(AnswerSource.COPIED_BY_RULE, copied.source)
+    }
+
+    @Test
+    fun testReversingSameAddressToNoRemovesCopiedCurrentAddress() {
+        val permAnswer = FormAnswer("f_perm_addr", "123 Main St", "123 Main St", AnswerSource.TYPED)
+        val copiedCurrAnswer = FormAnswer("f_curr_addr", "123 Main St", "123 Main St", AnswerSource.COPIED_BY_RULE)
+        val answers = mapOf(
+            "f_perm_addr" to permAnswer,
+            "f_curr_addr" to copiedCurrAnswer
+        )
+        val sameField = sampleFields.first { it.type == FieldType.SAME_AS_PERMANENT_ADDRESS }
+        val reversedSameAnswer = FormAnswer("f_same_addr", "no", "no", AnswerSource.TYPED)
+
+        val toRemove = engine.evaluateAnswersToRemove(sameField, reversedSameAnswer, sampleFields, answers)
+        assertEquals(listOf("f_curr_addr"), toRemove)
+    }
+
+    @Test
+    fun testReversingSameAddressToNoDoesNotRemoveUserEnteredCurrentAddress() {
+        // If current address was typed directly by user, do not remove it
+        val userCurrAnswer = FormAnswer("f_curr_addr", "456 Other St", "456 Other St", AnswerSource.TYPED)
+        val answers = mapOf("f_curr_addr" to userCurrAnswer)
+        val sameField = sampleFields.first { it.type == FieldType.SAME_AS_PERMANENT_ADDRESS }
+        val reversedSameAnswer = FormAnswer("f_same_addr", "no", "no", AnswerSource.TYPED)
+
+        val toRemove = engine.evaluateAnswersToRemove(sameField, reversedSameAnswer, sampleFields, answers)
+        assertTrue("Should not remove manually typed address", toRemove.isEmpty())
     }
 }
