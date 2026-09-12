@@ -16,7 +16,8 @@ object WhisperBridge {
 
     external fun transcribe(
         handle: Long,
-        audio: FloatArray
+        audio: FloatArray,
+        language: String
     ): String
 
 

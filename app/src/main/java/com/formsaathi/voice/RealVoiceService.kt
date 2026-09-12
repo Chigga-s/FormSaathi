@@ -9,38 +9,41 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class RealVoiceService(context: Context) : VoiceService {
+sealed class VoiceException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class MissingModel(cause: Throwable? = null) : VoiceException("Offline speech model is unavailable. You can still type your answer.", cause)
+    class InvalidAudio : VoiceException("Record mono 16 kHz PCM audio, up to 10 seconds.")
+    class NoSpeech : VoiceException("No speech was detected. Please try again or type your answer.")
+    class Inference(cause: Throwable? = null) : VoiceException("Offline transcription failed. Please try again or type your answer.", cause)
+    class Recording(cause: Throwable? = null) : VoiceException("Unable to record audio. Check microphone permission.", cause)
+}
 
-    private val whisper = WhisperManager()
+class RealVoiceService internal constructor(
+    private val inference: (FloatArray, SupportedLanguage) -> String
+) : VoiceService, AutoCloseable {
+    private var manager: WhisperManager? = null
 
-    init {
-        val modelPath = AssetUtils.copyModel(context)
-        whisper.loadModel(modelPath)
+    private constructor(context: Context, whisper: WhisperManager) : this({ audio, language ->
+        whisper.loadModel(AssetUtils.copyModel(context))
+        whisper.transcribe(audio, language)
+    }) {
+        manager = whisper
     }
 
-    override suspend fun transcribe(audioFile: File, language: SupportedLanguage): String {
-        return withContext(Dispatchers.IO) {
-            val bytes = audioFile.readBytes()
-            
-            // Assuming 16-bit PCM little-endian. If WAV, skipping header would be ideal, 
-            // but for simplicity we'll decode directly.
-            // A more robust implementation would parse the WAV header if present.
-            val headerOffset = if (bytes.size > 44 && bytes[0] == 'R'.code.toByte() && bytes[1] == 'I'.code.toByte()) 44 else 0
-            
-            val shortCount = (bytes.size - headerOffset) / 2
-            val shortArray = ShortArray(shortCount)
-            
-            ByteBuffer.wrap(bytes, headerOffset, bytes.size - headerOffset)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .asShortBuffer()
-                .get(shortArray)
-                
-            val floatArray = FloatArray(shortCount)
-            for (i in shortArray.indices) {
-                floatArray[i] = shortArray[i].toFloat() / 32768.0f
-            }
-            
-            whisper.transcribe(floatArray)
+    constructor(context: Context) : this(context.applicationContext, WhisperManager())
+
+    override suspend fun transcribe(audioFile: File, language: SupportedLanguage): String = withContext(Dispatchers.IO) {
+        val size = audioFile.length()
+        if (size !in 2L..320000L || size % 2 != 0L || audioFile.extension != "pcm") {
+            throw VoiceException.InvalidAudio()
         }
+        val bytes = audioFile.readBytes()
+        if (bytes.size.toLong() != size) throw VoiceException.InvalidAudio()
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        val samples = FloatArray(buffer.remaining()) { buffer.get().toFloat() / 32768f }
+        inference(samples, language).trim().ifBlank { throw VoiceException.NoSpeech() }
+    }
+
+    override fun close() {
+        manager?.release()
     }
 }

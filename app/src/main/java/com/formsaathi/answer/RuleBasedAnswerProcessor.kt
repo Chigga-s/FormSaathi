@@ -19,7 +19,7 @@ class RuleBasedAnswerProcessor : AnswerProcessor {
         return when (fieldType) {
             FieldType.MOBILE, FieldType.PINCODE, FieldType.AADHAAR -> {
                 // Keep only numeric digits
-                trimmed.replace(Regex("[^0-9]"), "")
+                NumberNormalizer.normalizeDigits(trimmed)
             }
             FieldType.ANNUAL_INCOME -> {
                 NumberNormalizer.normalize(trimmed)
@@ -30,15 +30,27 @@ class RuleBasedAnswerProcessor : AnswerProcessor {
             FieldType.SAME_AS_PERMANENT_ADDRESS -> {
                 val lower = trimmed.lowercase()
                 // Simple yes/no matching for common English/Hindi/Marathi words
-                if (lower in listOf("yes", "y", "true", "haan", "ha", "ho", "hoy")) "yes" else "no"
+                when (lower) {
+                    "yes", "y", "true", "haan", "ha", "ho", "hoy", "हाँ", "हां", "हो", "होय" -> "yes"
+                    "no", "n", "false", "नहीं", "नही", "ना", "नाही", "nahi" -> "no"
+                    else -> trimmed
+                }
             }
             FieldType.GENDER -> {
                 val lower = trimmed.lowercase()
-                when {
-                    lower.startsWith("m") || lower.contains("male") -> "Male"
-                    lower.startsWith("f") || lower.contains("female") -> "Female"
-                    else -> "Other"
+                when (lower) {
+                    "m", "male", "पुरुष" -> "Male"
+                    "f", "female", "महिला", "स्त्री" -> "Female"
+                    "other", "अन्य", "इतर" -> "Other"
+                    else -> trimmed
                 }
+            }
+            FieldType.CATEGORY -> when (trimmed.lowercase()) {
+                "general", "open", "सामान्य", "जनरल", "खुला" -> "General"
+                "obc", "ओबीसी" -> "OBC"
+                "sc", "एससी" -> "SC"
+                "st", "एसटी" -> "ST"
+                else -> trimmed
             }
             else -> trimmed
         }

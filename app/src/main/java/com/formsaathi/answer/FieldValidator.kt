@@ -2,9 +2,8 @@ package com.formsaathi.answer
 
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.ValidationResult
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.LocalDate
+import java.time.format.DateTimeParseException
 
 class FieldValidator {
 
@@ -13,19 +12,20 @@ class FieldValidator {
         
         return when (fieldType) {
             FieldType.MOBILE -> {
-                val digits = trimmed.filter { it.isDigit() }
-                if (digits.length == 10) ValidationResult.Valid
+                if (trimmed.matches(Regex("[0-9]{10}"))) ValidationResult.Valid
                 else ValidationResult.Invalid("Mobile number must be exactly 10 digits")
             }
             FieldType.PINCODE -> {
-                val digits = trimmed.filter { it.isDigit() }
-                if (digits.length == 6) ValidationResult.Valid
+                if (trimmed.matches(Regex("[0-9]{6}"))) ValidationResult.Valid
                 else ValidationResult.Invalid("PIN code must be exactly 6 digits")
             }
             FieldType.AADHAAR -> {
-                val digits = trimmed.filter { it.isDigit() }
-                if (digits.length == 12) ValidationResult.Valid
+                if (trimmed.matches(Regex("[0-9]{12}"))) ValidationResult.Valid
                 else ValidationResult.Invalid("Aadhaar number must be exactly 12 digits")
+            }
+            FieldType.SAME_AS_PERMANENT_ADDRESS -> {
+                if (trimmed == "yes" || trimmed == "no") ValidationResult.Valid
+                else ValidationResult.Invalid("Please answer yes or no")
             }
             FieldType.EMAIL -> {
                 if (trimmed.isEmpty()) ValidationResult.Valid
@@ -41,12 +41,11 @@ class FieldValidator {
             }
             FieldType.DATE_OF_BIRTH -> {
                 try {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
-                    val parsedDate = sdf.parse(trimmed)
-                    if (parsedDate != null && parsedDate.before(Date())) ValidationResult.Valid
-                    else ValidationResult.Invalid("Date of birth must be in YYYY-MM-DD format and cannot be in the future")
-                } catch (e: Exception) {
-                    ValidationResult.Invalid("Invalid date. Use YYYY-MM-DD format")
+                    val date = LocalDate.parse(trimmed, DateNormalizer.canonicalFormat)
+                    if (!date.isAfter(LocalDate.now())) ValidationResult.Valid
+                    else ValidationResult.Invalid("Date of birth cannot be in the future")
+                } catch (_: DateTimeParseException) {
+                    ValidationResult.Invalid("Invalid date. Use DD/MM/YYYY format")
                 }
             }
             FieldType.FULL_NAME, FieldType.FATHER_NAME -> {

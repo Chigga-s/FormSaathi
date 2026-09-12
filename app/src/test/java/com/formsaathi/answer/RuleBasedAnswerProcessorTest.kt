@@ -44,7 +44,7 @@ class RuleBasedAnswerProcessorTest {
             "12th Sept 2026",
             SupportedLanguage.ENGLISH
         )
-        assertEquals("2026-09-12", normalized)
+        assertEquals("12/09/2026", normalized)
     }
     
     @Test

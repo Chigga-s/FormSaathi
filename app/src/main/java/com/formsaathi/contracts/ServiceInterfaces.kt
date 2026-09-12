@@ -7,6 +7,7 @@ import com.formsaathi.model.ParsedForm
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.model.ValidationResult
 import java.io.File
+import com.formsaathi.model.GenerationResult
 
 /**
  * Service interface for parsing a government PDF into structured fields and page metadata.
@@ -65,5 +66,5 @@ interface CompletedPdfGenerator {
         parsedForm: ParsedForm,
         answers: Map<String, FormAnswer>,
         outputUri: Uri
-    )
+    ): GenerationResult
 }

@@ -1,78 +1,37 @@
 package com.formsaathi.voice
 
+import com.formsaathi.model.SupportedLanguage
 
 class WhisperManager {
+    private var handle = 0L
+    private var closed = false
 
-
-    private var handle: Long = 0
-
-
+    @Synchronized
     fun loadModel(path: String) {
-
-        println("================================")
-        println("Loading Whisper model")
-        println("PATH = $path")
-
-        val file =
-            java.io.File(path)
-
-        println("FILE EXISTS = ${file.exists()}")
-        println("FILE SIZE = ${file.length()} bytes")
-
-
-        handle =
-            WhisperBridge.loadModel(
-                path
-            )
-
-
-        println("NATIVE HANDLE = $handle")
-
-
-        if (handle == 0L) {
-
-            throw IllegalStateException(
-                "Whisper model loading failed"
-            )
+        check(!closed) { "Voice service is closed" }
+        if (handle != 0L) return
+        try {
+            handle = WhisperBridge.loadModel(path)
+        } catch (error: LinkageError) {
+            throw VoiceException.MissingModel(error)
         }
-
-        println("MODEL LOADED SUCCESSFULLY")
-        println("================================")
+        if (handle == 0L) throw VoiceException.MissingModel()
     }
 
-
-
-    fun transcribe(
-        audio: FloatArray
-    ): String {
-
-
-        if (handle == 0L) {
-
-            throw IllegalStateException(
-                "Model not loaded"
-            )
+    @Synchronized
+    fun transcribe(audio: FloatArray, language: SupportedLanguage = SupportedLanguage.ENGLISH): String {
+        if (handle == 0L || closed) throw VoiceException.MissingModel()
+        try {
+            return WhisperBridge.transcribe(handle, audio, language.code)
+        } catch (error: IllegalStateException) {
+            throw VoiceException.Inference(error)
         }
-
-
-        return WhisperBridge.transcribe(
-            handle,
-            audio
-        )
     }
 
-
-
+    @Synchronized
     fun release() {
-
-        if (handle != 0L) {
-
-            WhisperBridge.freeModel(
-                handle
-            )
-
-            handle = 0
-
-        }
+        if (handle != 0L) WhisperBridge.freeModel(handle)
+        handle = 0L
+        closed = true
     }
 }
