@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,11 +34,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.material3.Switch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.navigation.compose.rememberNavController
+import com.formsaathi.UI.FormSaathiNavigation
+import com.formsaathi.UI.Routes
 import com.formsaathi.core.EngineFactory
 import com.formsaathi.core.FormSaathiCoordinator
 import com.formsaathi.core.FormUiState
@@ -49,25 +52,19 @@ import com.formsaathi.pdf.SamplePdfFactory
 import kotlinx.coroutines.launch
 
 /**
- * Entry Activity providing an interactive test harness for Role 4 and integrated Role 2.
- * Demonstrates the complete lifecycle: PDF import, session coordination,
- * OCR/mock parsing, conditional rules, dynamic review, and completed PDF generation/sharing.
- * Role 1 will replace the screen composables with their polished UI designs.
+ * Main Activity for FormSaathi.
+ * Integrates Role 1's Compose UI flow (Splash -> Language -> Home -> Processing -> Questions -> Review -> Result)
+ * with Role 4's Session Coordinator / PDF Generator and Role 2's ML Kit OCR Form Parser.
+ * Also provides an accessible Developer Test Harness route for low-level diagnostics.
  */
 class MainActivity : ComponentActivity() {
 
-    private lateinit var coordinator: FormSaathiCoordinator
     private lateinit var outputFileManager: OutputFileManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         outputFileManager = OutputFileManager(this)
-        // Backed by real PDF generator and mock engines by default
-        coordinator = EngineFactory.createMockCoordinator(
-            context = this,
-            useRealPdfGenerator = true
-        )
 
         setContent {
             MaterialTheme {
@@ -75,9 +72,107 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    Role4HarnessScreen(
-                        initialCoordinator = coordinator,
-                        outputFileManager = outputFileManager
+                    val navController = rememberNavController()
+                    val context = LocalContext.current
+                    val scope = rememberCoroutineScope()
+
+                    var selectedLanguage by remember {
+                        mutableStateOf(SupportedLanguage.ENGLISH)
+                    }
+
+                    var selectedPdfUri by remember {
+                        mutableStateOf<Uri?>(null)
+                    }
+
+                    var selectedFileName by remember {
+                        mutableStateOf<String?>(null)
+                    }
+
+                    var useRealFormParser by remember {
+                        mutableStateOf(false)
+                    }
+
+                    val coordinator = remember(useRealFormParser) {
+                        if (useRealFormParser) {
+                            EngineFactory.createRealCoordinator(context)
+                        } else {
+                            EngineFactory.createMockCoordinator(
+                                context = context,
+                                useRealPdfGenerator = true
+                            )
+                        }
+                    }
+
+                    // SAF Document Picker for Source PDF
+                    val pdfPicker = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.OpenDocument()
+                    ) { uri: Uri? ->
+                        if (uri != null) {
+                            selectedPdfUri = uri
+                            selectedFileName = uri.lastPathSegment
+                                ?.substringAfterLast("/")
+                                ?: "Selected_Form.pdf"
+                            useRealFormParser = true
+                            scope.launch {
+                                coordinator.startSession(uri, selectedLanguage)
+                            }
+                            navController.navigate(Routes.PROCESSING)
+                        }
+                    }
+
+                    // SAF Document Creator for Output PDF
+                    val pdfCreateLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.CreateDocument("application/pdf")
+                    ) { outputUri: Uri? ->
+                        val targetUri = outputUri ?: run {
+                            val cacheFile = outputFileManager.createCachePdfFile(
+                                "Completed_${selectedFileName ?: "Form.pdf"}"
+                            )
+                            outputFileManager.getShareableUri(cacheFile)
+                        }
+                        scope.launch {
+                            coordinator.generatePdf(targetUri)
+                        }
+                    }
+
+                    FormSaathiNavigation(
+                        navController = navController,
+                        selectedLanguage = selectedLanguage,
+                        selectedFileName = selectedFileName,
+                        coordinator = coordinator,
+                        outputFileManager = outputFileManager,
+                        onLanguageSelected = { lang ->
+                            selectedLanguage = lang
+                            coordinator.switchLanguage(lang)
+                        },
+                        onRequestPdf = {
+                            pdfPicker.launch(arrayOf("application/pdf"))
+                        },
+                        onRequestSampleForm = {
+                            val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
+                            selectedPdfUri = Uri.fromFile(sampleFile)
+                            selectedFileName = sampleFile.name
+                            useRealFormParser = false
+                            scope.launch {
+                                coordinator.startSession(Uri.fromFile(sampleFile), selectedLanguage)
+                            }
+                            navController.navigate(Routes.PROCESSING)
+                        },
+                        onRequestCreatePdf = {
+                            pdfCreateLauncher.launch("Completed_${selectedFileName ?: "Form.pdf"}")
+                        },
+                        onOpenHarness = {
+                            navController.navigate(Routes.HARNESS)
+                        },
+                        harnessScreen = {
+                            Role4HarnessScreen(
+                                initialCoordinator = coordinator,
+                                outputFileManager = outputFileManager,
+                                onBackToApp = {
+                                    navController.popBackStack()
+                                }
+                            )
+                        }
                     )
                 }
             }
@@ -85,10 +180,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Developer Test Harness Screen for inspecting low-level engine details,
+ * switching between Fake and Real OCR parsers, and verifying coordinates.
+ */
 @Composable
 fun Role4HarnessScreen(
     initialCoordinator: FormSaathiCoordinator,
-    outputFileManager: OutputFileManager
+    outputFileManager: OutputFileManager,
+    onBackToApp: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -131,8 +231,14 @@ fun Role4HarnessScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (onBackToApp != null) {
+            OutlinedButton(onClick = onBackToApp) {
+                Text("← Back to FormSaathi App")
+            }
+        }
+
         Text(
-            text = "FormSaathi (Integration Test Harness)",
+            text = "FormSaathi (Developer Test Harness)",
             style = MaterialTheme.typography.titleLarge
         )
 
@@ -161,7 +267,6 @@ fun Role4HarnessScreen(
                     }
                     OutlinedButton(onClick = {
                         scope.launch {
-                            // Generate a valid multi-page sample PDF instead of an empty file
                             val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
                             coordinator.startSession(Uri.fromFile(sampleFile), SupportedLanguage.ENGLISH)
                         }
@@ -258,7 +363,6 @@ fun Role4HarnessScreen(
                 )
                 Text("Total answers recorded: ${state.answers.size}")
 
-                // Inline editable review for each field
                 state.fields.forEach { field ->
                     val existingAnswer = state.answers[field.id]
                     ReviewFieldEditor(
@@ -300,7 +404,6 @@ fun Role4HarnessScreen(
                 )
                 Text("Output: ${state.filename}")
 
-                // Display text-fit warnings if any
                 if (state.warnings.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -361,7 +464,6 @@ fun Role4HarnessScreen(
 
 /**
  * Inline editor for a single field on the Review screen.
- * Allows direct text editing and saving, or jumping back into the question flow.
  */
 @Composable
 fun ReviewFieldEditor(
