@@ -1,4 +1,5 @@
 package com.formsaathi.UI
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,24 +11,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val FormSathiPurple = Color(0xFF39277A)
-private val FormSathiOrange = Color(0xFFFF8A00)
+private val FormSathiOrange = androidx.compose.ui.graphics.Color(0xFFFF8A00)
 
 enum class ProcessingStage {
     RENDERING,
@@ -46,7 +46,7 @@ fun ProcessingScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
 
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -58,7 +58,7 @@ fun ProcessingScreen(
 
             CircularProgressIndicator(
                 modifier = Modifier.size(56.dp),
-                color = FormSathiPurple
+                color = MaterialTheme.colorScheme.primary
             )
 
             Spacer(
@@ -68,7 +68,7 @@ fun ProcessingScreen(
             Text(
                 text = "Processing your form",
                 fontSize = 25.sp,
-                color = FormSathiPurple
+                color = MaterialTheme.colorScheme.primary
             )
 
             Spacer(
@@ -78,7 +78,9 @@ fun ProcessingScreen(
             Text(
                 text = "Please wait while we prepare your form.",
                 fontSize = 16.sp,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onBackground.copy(
+                    alpha = 0.7f
+                )
             )
 
             Spacer(
@@ -114,12 +116,12 @@ fun ProcessingScreen(
                     .height(52.dp),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.LightGray
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             ) {
                 Text(
                     text = "Cancel",
-                    color = Color.Black,
                     fontSize = 16.sp
                 )
             }
@@ -130,7 +132,7 @@ fun ProcessingScreen(
                 imageVector = Icons.Default.Error,
                 contentDescription = "Processing error",
                 modifier = Modifier.size(64.dp),
-                tint = Color.Red
+                tint = MaterialTheme.colorScheme.error
             )
 
             Spacer(
@@ -140,7 +142,7 @@ fun ProcessingScreen(
             Text(
                 text = "Unable to process form",
                 fontSize = 24.sp,
-                color = FormSathiPurple
+                color = MaterialTheme.colorScheme.primary
             )
 
             Spacer(
@@ -150,7 +152,9 @@ fun ProcessingScreen(
             Text(
                 text = errorMessage,
                 fontSize = 16.sp,
-                color = Color.DarkGray
+                color = MaterialTheme.colorScheme.onBackground.copy(
+                    alpha = 0.7f
+                )
             )
 
             Spacer(
@@ -163,12 +167,12 @@ fun ProcessingScreen(
                     .fillMaxWidth()
                     .height(52.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = FormSathiPurple
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Text(
                     text = "Try again",
-                    color = Color.White,
                     fontSize = 16.sp
                 )
             }
@@ -183,12 +187,12 @@ fun ProcessingScreen(
                     .fillMaxWidth()
                     .height(52.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.LightGray
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             ) {
                 Text(
                     text = "Back to Home",
-                    color = Color.Black,
                     fontSize = 16.sp
                 )
             }
@@ -222,7 +226,7 @@ private fun ProcessingStageRow(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Completed",
                     modifier = Modifier.size(28.dp),
-                    tint = FormSathiPurple
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
 
@@ -241,7 +245,9 @@ private fun ProcessingStageRow(
                     imageVector = Icons.Default.Description,
                     contentDescription = "Pending",
                     modifier = Modifier.size(26.dp),
-                    tint = Color.LightGray
+                    tint = MaterialTheme.colorScheme.onBackground.copy(
+                        alpha = 0.35f
+                    )
                 )
             }
         }
@@ -256,13 +262,15 @@ private fun ProcessingStageRow(
             color = when {
 
                 stageNumber == currentNumber ->
-                    Color.Black
+                    MaterialTheme.colorScheme.onBackground
 
                 stageNumber < currentNumber ->
-                    FormSathiPurple
+                    MaterialTheme.colorScheme.primary
 
                 else ->
-                    Color.Gray
+                    MaterialTheme.colorScheme.onBackground.copy(
+                        alpha = 0.5f
+                    )
             }
         )
     }

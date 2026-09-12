@@ -17,17 +17,17 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 
-private val FormSathiPurple = Color(0xFF39277A)
-private val FormSathiOrange = Color(0xFFFF8A00)
+private val FormSathiOrange =
+    androidx.compose.ui.graphics.Color(0xFFFF8A00)
 
 data class ReviewField(
     val fieldName: String,
@@ -59,7 +59,7 @@ fun ReviewScreen(
             text = "Review your answers",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            color = FormSathiPurple
+            color = MaterialTheme.colorScheme.primary
         )
 
         Spacer(
@@ -69,7 +69,9 @@ fun ReviewScreen(
         Text(
             text = "Check the information before creating your completed PDF.",
             fontSize = 16.sp,
-            color = Color.DarkGray
+            color = MaterialTheme.colorScheme.onBackground.copy(
+                alpha = 0.7f
+            )
         )
 
         Spacer(
@@ -86,7 +88,7 @@ fun ReviewScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF5F3FA)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
 
@@ -107,7 +109,7 @@ fun ReviewScreen(
                                     text = field.fieldName,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = FormSathiPurple
+                                    color = MaterialTheme.colorScheme.primary
                                 )
 
                                 Spacer(
@@ -121,7 +123,7 @@ fun ReviewScreen(
                                         field.answer
                                     },
                                     fontSize = 17.sp,
-                                    color = Color.Black
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
 
                                 if (field.lowConfidence) {
@@ -133,7 +135,7 @@ fun ReviewScreen(
                                     Text(
                                         text = "Please verify this answer.",
                                         fontSize = 13.sp,
-                                        color = Color(0xFFB35A00)
+                                        color = MaterialTheme.colorScheme.secondary
                                     )
                                 }
 
@@ -146,7 +148,7 @@ fun ReviewScreen(
                                     Text(
                                         text = "Manual review required.",
                                         fontSize = 13.sp,
-                                        color = Color.Red
+                                        color = MaterialTheme.colorScheme.error
                                     )
                                 }
                             }
@@ -155,7 +157,11 @@ fun ReviewScreen(
                                 onClick = {
                                     onEditField(field)
                                 },
-                                modifier = Modifier.height(48.dp)
+                                modifier = Modifier.height(48.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
                             ) {
 
                                 Icon(
@@ -180,14 +186,17 @@ fun ReviewScreen(
                         text = "Required documents",
                         fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
-                        color = FormSathiPurple
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
 
                 items(requiredDocuments) { document ->
 
                     Card(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
                     ) {
 
                         Column(
@@ -197,7 +206,8 @@ fun ReviewScreen(
                             Text(
                                 text = document.name,
                                 fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
                             if (document.constraint != null) {
@@ -209,7 +219,9 @@ fun ReviewScreen(
                                 Text(
                                     text = document.constraint,
                                     fontSize = 14.sp,
-                                    color = Color.DarkGray
+                                    color = MaterialTheme.colorScheme.onSurface.copy(
+                                        alpha = 0.7f
+                                    )
                                 )
                             }
                         }
@@ -228,14 +240,14 @@ fun ReviewScreen(
                 .fillMaxWidth()
                 .height(54.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = FormSathiOrange
+                containerColor = FormSathiOrange,
+                contentColor = androidx.compose.ui.graphics.Color.White
             )
         ) {
 
             Text(
                 text = "Create completed PDF",
-                fontSize = 17.sp,
-                color = Color.White
+                fontSize = 17.sp
             )
         }
     }
