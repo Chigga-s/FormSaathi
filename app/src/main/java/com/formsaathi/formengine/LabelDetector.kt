@@ -17,11 +17,19 @@ class LabelDetector {
         return normalized.trim()
     }
 
+    private val bulletPattern = Regex("^[•\\-\\*▪◦‣·]\\s+|^\\d+[.)]\\s+")
+
     private fun isPossibleLabel(
         block: OcrBlock
     ): Boolean {
         val normalized = normalizeLabel(block.text)
         if (normalized.isBlank()) return false
+
+        // Bulleted/numbered list items are document requirements, not fillable
+        // fields. RequirementExtractor handles them from the raw OCR blocks;
+        // keeping them here produced bogus questions (e.g. a bullet mentioning
+        // Aadhaar was asked as a 12-digit Aadhaar-number question).
+        if (bulletPattern.containsMatchIn(normalized)) return false
 
         val width = block.box.right - block.box.left
         val height = block.box.bottom - block.box.top

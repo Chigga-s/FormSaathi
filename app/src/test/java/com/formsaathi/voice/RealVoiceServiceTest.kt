@@ -37,6 +37,21 @@ class RealVoiceServiceTest {
         }
     }
 
+    @Test fun rejectsWhisperBlankAudioToken() = runBlocking {
+        val file = File.createTempFile("voice", ".pcm")
+        try {
+            file.writeBytes(byteArrayOf(0, 0))
+            val service = RealVoiceService { _, _ -> "  [BLANK_AUDIO] " }
+            try {
+                service.transcribe(file, SupportedLanguage.ENGLISH)
+                fail("Expected no speech")
+            } catch (_: VoiceException.NoSpeech) {
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
     @Test fun rejectsEmptyTranscript() = runBlocking {
         val file = File.createTempFile("voice", ".pcm")
         try {

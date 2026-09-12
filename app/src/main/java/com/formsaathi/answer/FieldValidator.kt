@@ -23,6 +23,10 @@ class FieldValidator {
                 if (trimmed.matches(Regex("[0-9]{12}"))) ValidationResult.Valid
                 else ValidationResult.Invalid("Aadhaar number must be exactly 12 digits")
             }
+            FieldType.PHOTO, FieldType.SIGNATURE -> {
+                if (trimmed.isNotEmpty()) ValidationResult.Valid
+                else ValidationResult.Invalid("Please attach a photo to continue")
+            }
             FieldType.SAME_AS_PERMANENT_ADDRESS -> {
                 if (trimmed == "yes" || trimmed == "no") ValidationResult.Valid
                 else ValidationResult.Invalid("Please answer yes or no")

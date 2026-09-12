@@ -1,4 +1,4 @@
-package com.formsaathi.UI
+﻿package com.formsaathi.UI
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,9 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
 
 private val FormSathiOrange =
     androidx.compose.ui.graphics.Color(0xFFFF8A00)
@@ -34,7 +34,8 @@ data class ReviewField(
     val answer: String,
     val lowConfidence: Boolean = false,
     val unknown: Boolean = false,
-    val fieldId: String = ""
+    val fieldId: String = "",
+    val manualStep: Boolean = false
 )
 
 data class ReviewDocument(
@@ -86,6 +87,70 @@ fun ReviewScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
+            if (requiredDocuments.isNotEmpty()) {
+
+                item {
+                    Text(
+                        text = "Attach these documents with your form",
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                items(requiredDocuments) { document ->
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+
+                            Text(
+                                text = document.name,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            if (document.constraint != null) {
+
+                                Spacer(
+                                    modifier = Modifier.height(4.dp)
+                                )
+
+                                Text(
+                                    text = document.constraint,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(
+                                        alpha = 0.7f
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text = "Your answers",
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
             items(fields) { field ->
 
                 Card(
@@ -120,7 +185,9 @@ fun ReviewScreen(
                                 )
 
                                 Text(
-                                    text = if (field.answer.isBlank()) {
+                                    text = if (field.manualStep) {
+                                        "Photo attached — use Edit in flow to change"
+                                    } else if (field.answer.isBlank()) {
                                         "No answer"
                                     } else {
                                         field.answer
@@ -171,61 +238,6 @@ fun ReviewScreen(
                                 Icon(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Edit"
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (requiredDocuments.isNotEmpty()) {
-
-                item {
-
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
-                    Text(
-                        text = "Required documents",
-                        fontSize = 21.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                items(requiredDocuments) { document ->
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
-                    ) {
-
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-
-                            Text(
-                                text = document.name,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            if (document.constraint != null) {
-
-                                Spacer(
-                                    modifier = Modifier.height(4.dp)
-                                )
-
-                                Text(
-                                    text = document.constraint,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(
-                                        alpha = 0.7f
-                                    )
                                 )
                             }
                         }

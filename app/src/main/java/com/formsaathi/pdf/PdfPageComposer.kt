@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormAnswer
 import com.formsaathi.model.FormField
@@ -35,7 +36,8 @@ data class CanvasRect(
  * 4. Collects and returns warnings for any answers that could not fit cleanly.
  */
 class PdfPageComposer(
-    private val textFitterProvider: () -> AnswerTextFitter = { AnswerTextFitter() }
+    private val textFitterProvider: () -> AnswerTextFitter = { AnswerTextFitter() },
+    private val imageLoader: (String) -> Bitmap? = { null }
 ) {
     private val textFitter by lazy { textFitterProvider() }
     private val bitmapPaint by lazy { Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG) }
@@ -62,14 +64,20 @@ class PdfPageComposer(
         // 2. Overlay answers for fields assigned to this page
         for (field in fieldsOnPage) {
             val answer = answers[field.id] ?: continue
-            val textToDraw = answer.normalizedValue.ifBlank { answer.rawValue }
-            if (textToDraw.isBlank()) continue
 
             val answerBounds = toCanvasCoordinates(
                 box = field.answerBox,
                 pageWidth = pageWidthPoints,
                 pageHeight = pageHeightPoints
             )
+
+            if (answer.source == AnswerSource.PHOTO) {
+                drawPhotoAnswer(canvas, field, answer, answerBounds, warnings)
+                continue
+            }
+
+            val textToDraw = answer.normalizedValue.ifBlank { answer.rawValue }
+            if (textToDraw.isBlank()) continue
 
             val isMultiLine = isMultiLineField(field)
             val fittedCleanly = textFitter.drawFittedText(
@@ -91,6 +99,46 @@ class PdfPageComposer(
         }
 
         return warnings
+    }
+
+    private fun drawPhotoAnswer(
+        canvas: Canvas,
+        field: FormField,
+        answer: FormAnswer,
+        answerBounds: CanvasRect,
+        warnings: MutableList<TextFitWarning>
+    ) {
+        val path = answer.normalizedValue.ifBlank { answer.rawValue }
+        val photo = path.takeIf { it.isNotBlank() }?.let { imageLoader(it) }
+        if (photo == null) {
+            warnings.add(
+                TextFitWarning(
+                    fieldId = field.id,
+                    fieldLabel = field.sourceLabel,
+                    reason = "Attached photo could not be embedded in the PDF"
+                )
+            )
+            return
+        }
+        // Fit inside the answer box preserving aspect ratio, aligned left.
+        val scale = minOf(
+            answerBounds.width / photo.width,
+            answerBounds.height / photo.height
+        ).coerceAtMost(1f)
+        val drawWidth = photo.width * scale
+        val drawHeight = photo.height * scale
+        val dst = RectF(
+            answerBounds.left,
+            answerBounds.bottom - drawHeight,
+            answerBounds.left + drawWidth,
+            answerBounds.bottom
+        )
+        canvas.save()
+        canvas.clipRect(answerBounds.toAndroidRectF())
+        canvas.drawBitmap(photo, null, dst, bitmapPaint)
+        canvas.restore()
+        // imageLoader hands over a freshly decoded bitmap per call.
+        photo.recycle()
     }
 
     /**

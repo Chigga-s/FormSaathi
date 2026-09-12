@@ -36,6 +36,7 @@ import androidx.navigation.compose.rememberNavController
 import com.formsaathi.core.FormSaathiCoordinator
 import com.formsaathi.core.FormUiState
 import com.formsaathi.core.FormViewModel
+import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.pdf.OutputFileManager
@@ -66,6 +67,7 @@ fun FormSaathiNavigation(
     val draft by model.draft.collectAsState()
     val recording by model.recording.collectAsState()
     val busy by model.busy.collectAsState()
+    val transcribing by model.transcribing.collectAsState()
     val voiceError by model.voiceError.collectAsState()
     val output = outputFileManager ?: remember { OutputFileManager(context) }
 
@@ -107,7 +109,11 @@ fun FormSaathiNavigation(
         }
     }
 
-    BackHandler(enabled = !busy && !recording) {
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) model.attachPhoto(uri)
+    }
+
+    BackHandler(enabled = !busy && !recording && !transcribing) {
         if (navController.previousBackStackEntry != null) {
             val currentRoute = navController.currentBackStackEntry?.destination?.route
             if (currentRoute == Routes.QUESTIONS) {
@@ -255,6 +261,9 @@ fun FormSaathiNavigation(
         composable(Routes.QUESTIONS) {
             when (val current = state) {
                 is FormUiState.Questioning -> {
+                    val photoType = current.currentField.type == FieldType.PHOTO ||
+                        current.currentField.type == FieldType.SIGNATURE
+
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Language switcher row
                         Row(
@@ -265,7 +274,7 @@ fun FormSaathiNavigation(
                         ) {
                             SupportedLanguage.entries.forEach { lang ->
                                 TextButton(
-                                    enabled = !busy && !recording,
+                                    enabled = !busy && !recording && !transcribing,
                                     onClick = { model.selectLanguage(lang) }
                                 ) {
                                     Text(
@@ -294,6 +303,15 @@ fun FormSaathiNavigation(
                             ) {
                                 Text("Stop recording")
                             }
+                        }
+
+                        if (transcribing) {
+                            Text(
+                                text = "Transcribing your answer…",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
+                            )
                         }
 
                         if (busy) {
@@ -328,8 +346,11 @@ fun FormSaathiNavigation(
                                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 }
                             },
-                            enabled = !busy && !recording,
-                            canSkip = current.canSkip
+                            enabled = !busy && !recording && !transcribing,
+                            canSkip = current.canSkip,
+                            photoMode = photoType,
+                            photoAttached = photoType && draft.isNotBlank(),
+                            onAttachPhoto = { gallery.launch("image/*") }
                         )
                     }
                 }
@@ -356,12 +377,16 @@ fun FormSaathiNavigation(
                 is FormUiState.Reviewing -> {
                     ReviewScreen(
                         fields = current.fields.map { field ->
+                            val ans = current.answers[field.id]
+                            val isPhoto = field.type == FieldType.PHOTO || field.type == FieldType.SIGNATURE
                             ReviewField(
                                 fieldName = field.sourceLabel,
-                                answer = current.answers[field.id]?.normalizedValue.orEmpty(),
+                                answer = if (isPhoto && ans?.rawValue?.isNotBlank() == true) "Photo attached"
+                                         else ans?.normalizedValue.orEmpty(),
                                 lowConfidence = field.confidence < 0.75f,
                                 unknown = field.type == FieldType.UNKNOWN,
-                                fieldId = field.id
+                                fieldId = field.id,
+                                manualStep = ans?.source == AnswerSource.PHOTO || isPhoto
                             )
                         },
                         requiredDocuments = current.documents.map { doc ->

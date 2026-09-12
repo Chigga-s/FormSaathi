@@ -45,6 +45,7 @@ class RuleBasedAnswerProcessor : AnswerProcessor {
                     else -> trimmed
                 }
             }
+            FieldType.PHOTO, FieldType.SIGNATURE -> trimmed
             FieldType.CATEGORY -> when (trimmed.lowercase()) {
                 "general", "open", "सामान्य", "जनरल", "खुला" -> "General"
                 "obc", "ओबीसी" -> "OBC"
