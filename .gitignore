@@ -30,6 +30,10 @@ desktop.ini
 
 *.apk
 *.aab
+.idea/
+*.txt
+scratch_test.kts
+app/src/main/cpp/whisper.cpp/
 *.so
 
 app/src/main/assets/models/*.bin
