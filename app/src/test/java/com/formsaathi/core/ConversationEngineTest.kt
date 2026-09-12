@@ -143,4 +143,51 @@ class ConversationEngineTest {
         val nextIndex = engine.getNextFieldIndex(fromIndex = 2, fields = sampleFields, currentAnswers = answers)
         assertEquals(4, nextIndex)
     }
+
+    @Test
+    fun testNonAddressFieldsAreNeverSkipped() {
+        // Even with "same as permanent" answered yes, non-address fields must never be skipped
+        val answers = mapOf(
+            "f_same_addr" to FormAnswer("f_same_addr", "yes", "yes", AnswerSource.TYPED)
+        )
+
+        val nameField = sampleFields.first { it.type == FieldType.FULL_NAME }
+        assertFalse("Name should never be skipped", engine.shouldSkipField(nameField, sampleFields, answers))
+
+        val permAddrField = sampleFields.first { it.type == FieldType.PERMANENT_ADDRESS }
+        assertFalse("Permanent address should never be skipped", engine.shouldSkipField(permAddrField, sampleFields, answers))
+
+        val mobileField = sampleFields.first { it.type == FieldType.MOBILE }
+        assertFalse("Mobile should never be skipped", engine.shouldSkipField(mobileField, sampleFields, answers))
+
+        val sameAsField = sampleFields.first { it.type == FieldType.SAME_AS_PERMANENT_ADDRESS }
+        assertFalse("Same-as question itself should never be skipped", engine.shouldSkipField(sameAsField, sampleFields, answers))
+    }
+
+    @Test
+    fun testCopiedAnswerCarriesCopiedByRuleSource() {
+        val permAnswer = FormAnswer(
+            fieldId = "f_perm_addr",
+            rawValue = "42 MG Road, Pune 411001",
+            normalizedValue = "42 MG Road, Pune 411001",
+            source = AnswerSource.TYPED
+        )
+        val sameAddrAnswer = FormAnswer(
+            fieldId = "f_same_addr",
+            rawValue = "yes",
+            normalizedValue = "yes",
+            source = AnswerSource.VOICE
+        )
+
+        val answers = mapOf("f_perm_addr" to permAnswer, "f_same_addr" to sameAddrAnswer)
+        val sameField = sampleFields.first { it.type == FieldType.SAME_AS_PERMANENT_ADDRESS }
+
+        val automated = engine.evaluateAutomatedAnswers(sameField, sameAddrAnswer, sampleFields, answers)
+        assertEquals(1, automated.size)
+        val copied = automated.first()
+        assertEquals(AnswerSource.COPIED_BY_RULE, copied.source)
+        // Copied answer should have the permanent address content, not the same-as answer
+        assertEquals("42 MG Road, Pune 411001", copied.rawValue)
+        assertEquals("42 MG Road, Pune 411001", copied.normalizedValue)
+    }
 }

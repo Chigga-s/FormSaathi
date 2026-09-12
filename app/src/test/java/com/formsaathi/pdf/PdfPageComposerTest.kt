@@ -3,6 +3,7 @@ package com.formsaathi.pdf
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormField
 import com.formsaathi.model.NormalizedRect
+import com.formsaathi.model.TextFitWarning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -61,4 +62,31 @@ class PdfPageComposerTest {
         )
         assertFalse(composer.isMultiLineField(singleLineField))
     }
+
+    @Test
+    fun testCanvasRectDimensions() {
+        // Pure Kotlin test — no Android RectF dependency
+        val canvasRect = CanvasRect(10f, 20f, 300f, 100f)
+
+        assertEquals(10f, canvasRect.left, 0.001f)
+        assertEquals(20f, canvasRect.top, 0.001f)
+        assertEquals(300f, canvasRect.right, 0.001f)
+        assertEquals(100f, canvasRect.bottom, 0.001f)
+        assertEquals(290f, canvasRect.width, 0.001f)
+        assertEquals(80f, canvasRect.height, 0.001f)
+    }
+
+    @Test
+    fun testTextFitWarningStructure() {
+        // Verify TextFitWarning data class works correctly (pure Kotlin, JVM-safe)
+        val warning = TextFitWarning(
+            fieldId = "field_address",
+            fieldLabel = "Permanent Address / स्थायी पता",
+            reason = "Answer text was clipped to fit within the answer box at minimum font size"
+        )
+        assertEquals("field_address", warning.fieldId)
+        assertEquals("Permanent Address / स्थायी पता", warning.fieldLabel)
+        assertTrue(warning.reason.contains("clipped"))
+    }
 }
+

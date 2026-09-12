@@ -4,6 +4,7 @@ import android.net.Uri
 import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormAnswer
+import com.formsaathi.model.GenerationResult
 import com.formsaathi.model.FormField
 import com.formsaathi.model.NormalizedRect
 import com.formsaathi.model.PageInfo
@@ -362,9 +363,11 @@ class FakeCompletedPdfGenerator : CompletedPdfGenerator {
         parsedForm: ParsedForm,
         answers: Map<String, FormAnswer>,
         outputUri: Uri
-    ) {
+    ): GenerationResult {
         wasGenerateCalled = true
         lastSourceUri = sourceUri
         lastAnswersCount = answers.size
+        return GenerationResult()
     }
 }
+

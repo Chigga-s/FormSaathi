@@ -9,6 +9,7 @@ import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormAnswer
 import com.formsaathi.model.FormField
 import com.formsaathi.model.NormalizedRect
+import com.formsaathi.model.TextFitWarning
 
 /**
  * Coordinate rectangle in PDF canvas points.
@@ -31,6 +32,7 @@ data class CanvasRect(
  * 1. Draws the high-resolution source form page bitmap as the background.
  * 2. Maps normalized answer bounding boxes (0.0..1.0) into output PDF point coordinates.
  * 3. Overlays user answers with high-precision text fitting and clipping.
+ * 4. Collects and returns warnings for any answers that could not fit cleanly.
  */
 class PdfPageComposer(
     private val textFitterProvider: () -> AnswerTextFitter = { AnswerTextFitter() }
@@ -40,6 +42,7 @@ class PdfPageComposer(
 
     /**
      * Composes one page of the PDF onto the provided PdfDocument Canvas.
+     * @return List of warnings for fields where answer text was clipped at minimum font size.
      */
     fun composePage(
         canvas: Canvas,
@@ -48,7 +51,9 @@ class PdfPageComposer(
         pageHeightPoints: Float,
         fieldsOnPage: List<FormField>,
         answers: Map<String, FormAnswer>
-    ) {
+    ): List<TextFitWarning> {
+        val warnings = mutableListOf<TextFitWarning>()
+
         // 1. Draw source page bitmap scaled to PDF page dimensions
         val srcRect = Rect(0, 0, pageBitmap.width, pageBitmap.height)
         val dstRect = RectF(0f, 0f, pageWidthPoints, pageHeightPoints)
@@ -67,13 +72,25 @@ class PdfPageComposer(
             )
 
             val isMultiLine = isMultiLineField(field)
-            textFitter.drawFittedText(
+            val fittedCleanly = textFitter.drawFittedText(
                 canvas = canvas,
                 text = textToDraw,
                 bounds = answerBounds.toAndroidRectF(),
                 isMultiLine = isMultiLine
             )
+
+            if (!fittedCleanly) {
+                warnings.add(
+                    TextFitWarning(
+                        fieldId = field.id,
+                        fieldLabel = field.sourceLabel,
+                        reason = "Answer text was clipped to fit within the answer box at minimum font size"
+                    )
+                )
+            }
         }
+
+        return warnings
     }
 
     /**
@@ -103,3 +120,4 @@ class PdfPageComposer(
         return aspectRatio > 0.35f
     }
 }
+

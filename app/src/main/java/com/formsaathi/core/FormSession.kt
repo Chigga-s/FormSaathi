@@ -120,4 +120,20 @@ class FormSession(
     fun getActiveQuestionsCount(conversationEngine: ConversationEngine): Int {
         return parsedForm.fields.count { !conversationEngine.shouldSkipField(it, parsedForm.fields, _answers) }
     }
+
+    /**
+     * Returns the 0-based position of the current field among active (non-skipped) fields.
+     * Used for accurate "Question X of Y" display when conditional rules skip fields.
+     */
+    fun getActiveQuestionPosition(conversationEngine: ConversationEngine): Int {
+        var position = 0
+        for (i in parsedForm.fields.indices) {
+            if (i == currentFieldIndex) return position
+            if (!conversationEngine.shouldSkipField(parsedForm.fields[i], parsedForm.fields, _answers)) {
+                position++
+            }
+        }
+        return position
+    }
 }
+

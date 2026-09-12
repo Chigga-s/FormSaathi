@@ -86,4 +86,37 @@ class FormSessionTest {
         assertEquals("f3", session.getCurrentField()?.id)
         assertTrue(session.canGoBack())
     }
+
+    @Test
+    fun testGetActiveQuestionPositionWithSkippedFields() {
+        // Build a session with the address conditional rule scenario
+        val fieldsWithAddress = listOf(
+            FormField("f1", "Name", FieldType.FULL_NAME, 0, NormalizedRect(0f, 0f, 1f, 1f), NormalizedRect(0f, 0f, 1f, 1f)),
+            FormField("f2", "Perm Addr", FieldType.PERMANENT_ADDRESS, 0, NormalizedRect(0f, 0f, 1f, 1f), NormalizedRect(0f, 0f, 1f, 1f)),
+            FormField("f3", "Same?", FieldType.SAME_AS_PERMANENT_ADDRESS, 0, NormalizedRect(0f, 0f, 1f, 1f), NormalizedRect(0f, 0f, 1f, 1f)),
+            FormField("f4", "Curr Addr", FieldType.CURRENT_ADDRESS, 0, NormalizedRect(0f, 0f, 1f, 1f), NormalizedRect(0f, 0f, 1f, 1f)),
+            FormField("f5", "Mobile", FieldType.MOBILE, 0, NormalizedRect(0f, 0f, 1f, 1f), NormalizedRect(0f, 0f, 1f, 1f))
+        )
+        val parsed = ParsedForm(
+            pages = listOf(PageInfo(0, 595f, 842f, 1190, 1684)),
+            fields = fieldsWithAddress,
+            documents = emptyList()
+        )
+        val addrSession = FormSession(parsed, SupportedLanguage.ENGLISH)
+
+        // Set "same as permanent" to yes — this skips f4 (current address)
+        addrSession.setAnswer(FormAnswer("f3", "yes", "yes", AnswerSource.TYPED))
+
+        // Position at field index 0 (Name) → active position should be 0
+        assertEquals(0, addrSession.getActiveQuestionPosition(conversationEngine))
+
+        // Advance to field index 4 (Mobile), which skips f4 (Current Address)
+        // In the active field list: [f1=0, f2=1, f3=2, f5=3] — f4 is skipped
+        addrSession.jumpToField(4)
+        val position = addrSession.getActiveQuestionPosition(conversationEngine)
+        assertEquals(3, position) // 0-based: Name=0, PermAddr=1, Same=2, Mobile=3
+
+        // Total active should be 4 (not 5)
+        assertEquals(4, addrSession.getActiveQuestionsCount(conversationEngine))
+    }
 }

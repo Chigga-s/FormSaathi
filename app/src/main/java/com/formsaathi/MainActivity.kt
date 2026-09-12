@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,7 +41,9 @@ import com.formsaathi.core.FormSaathiCoordinator
 import com.formsaathi.core.FormUiState
 import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.SupportedLanguage
+import com.formsaathi.model.ValidationResult
 import com.formsaathi.pdf.OutputFileManager
+import com.formsaathi.pdf.SamplePdfFactory
 import kotlinx.coroutines.launch
 
 /**
@@ -132,9 +135,9 @@ fun Role4HarnessScreen(
                     }
                     OutlinedButton(onClick = {
                         scope.launch {
-                            // Run mock session using sample file URI
-                            val sampleCacheFile = outputFileManager.createCachePdfFile("sample_input.pdf")
-                            coordinator.startSession(Uri.fromFile(sampleCacheFile), SupportedLanguage.ENGLISH)
+                            // Generate a valid multi-page sample PDF instead of an empty file
+                            val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
+                            coordinator.startSession(Uri.fromFile(sampleFile), SupportedLanguage.ENGLISH)
                         }
                     }) {
                         Text("Quick Mock Session")
@@ -228,8 +231,22 @@ fun Role4HarnessScreen(
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text("Total answers recorded: ${state.answers.size}")
-                state.answers.forEach { (fieldId, answer) ->
-                    Text("• $fieldId: ${answer.normalizedValue} (${answer.source})")
+
+                // Inline editable review for each field
+                state.fields.forEach { field ->
+                    val existingAnswer = state.answers[field.id]
+                    ReviewFieldEditor(
+                        fieldId = field.id,
+                        fieldLabel = field.sourceLabel,
+                        currentValue = existingAnswer?.normalizedValue ?: "",
+                        source = existingAnswer?.source?.name ?: "—",
+                        onSave = { newText ->
+                            coordinator.updateAnswerInReview(field.id, newText)
+                        },
+                        onJumpToQuestion = {
+                            coordinator.jumpToField(field.id)
+                        }
+                    )
                 }
 
                 if (state.documents.isNotEmpty()) {
@@ -256,6 +273,23 @@ fun Role4HarnessScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text("Output: ${state.filename}")
+
+                // Display text-fit warnings if any
+                if (state.warnings.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "⚠ Text Fit Warnings (${state.warnings.size}):",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    state.warnings.forEach { warning ->
+                        Text(
+                            text = "• ${warning.fieldLabel}: ${warning.reason}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
@@ -293,6 +327,106 @@ fun Role4HarnessScreen(
                     }
                 }) {
                     Text("Retry")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Inline editor for a single field on the Review screen.
+ * Allows direct text editing and saving, or jumping back into the question flow.
+ */
+@Composable
+fun ReviewFieldEditor(
+    fieldId: String,
+    fieldLabel: String,
+    currentValue: String,
+    source: String,
+    onSave: (String) -> ValidationResult,
+    onJumpToQuestion: () -> Unit
+) {
+    var editing by remember(fieldId) { mutableStateOf(false) }
+    var editText by remember(fieldId, currentValue) { mutableStateOf(currentValue) }
+    var validationError by remember(fieldId) { mutableStateOf<String?>(null) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (currentValue.isBlank())
+                MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = fieldLabel,
+                style = MaterialTheme.typography.labelMedium
+            )
+
+            if (editing) {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = {
+                        editText = it
+                        validationError = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = validationError != null,
+                    singleLine = true
+                )
+                if (validationError != null) {
+                    Text(
+                        text = validationError ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        val result = onSave(editText)
+                        if (result is ValidationResult.Invalid) {
+                            validationError = result.message
+                        } else {
+                            editing = false
+                            validationError = null
+                        }
+                    }) {
+                        Text("Save")
+                    }
+                    OutlinedButton(onClick = {
+                        editing = false
+                        editText = currentValue
+                        validationError = null
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = currentValue.ifBlank { "(not answered)" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = source,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { editing = true }) {
+                        Text("Edit")
+                    }
+                    TextButton(onClick = onJumpToQuestion) {
+                        Text("Edit in flow")
+                    }
                 }
             }
         }

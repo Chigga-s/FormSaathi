@@ -5,6 +5,7 @@ import com.formsaathi.model.FormAnswer
 import com.formsaathi.model.FormField
 import com.formsaathi.model.RequiredDocument
 import com.formsaathi.model.SupportedLanguage
+import com.formsaathi.model.TextFitWarning
 
 /**
  * Immutable UI state emitted to the Jetpack Compose layer by FormSaathiCoordinator.
@@ -57,7 +58,8 @@ sealed interface FormUiState {
      */
     data class Completed(
         val outputUri: Uri,
-        val filename: String
+        val filename: String,
+        val warnings: List<TextFitWarning> = emptyList()
     ) : FormUiState
 
     /**

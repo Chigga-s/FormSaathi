@@ -264,7 +264,7 @@ class FormSaathiCoordinator(
         }
 
         try {
-            pdfGenerator.generate(
+            val result = pdfGenerator.generate(
                 sourceUri = sourceUri,
                 parsedForm = session.parsedForm,
                 answers = session.answers,
@@ -274,7 +274,8 @@ class FormSaathiCoordinator(
             mutex.withLock {
                 _uiState.value = FormUiState.Completed(
                     outputUri = outputUri,
-                    filename = "Completed_Form.pdf"
+                    filename = "Completed_Form.pdf",
+                    warnings = result.warnings
                 )
             }
         } catch (e: Exception) {
@@ -296,12 +297,13 @@ class FormSaathiCoordinator(
         val questionText = questionProvider.questionFor(field.type, session.language)
         val currentAnswer = session.getCurrentAnswer()
         val totalActive = session.getActiveQuestionsCount(conversationEngine)
+        val activePosition = session.getActiveQuestionPosition(conversationEngine)
 
         _uiState.value = FormUiState.Questioning(
             currentField = field,
             questionText = questionText,
             currentAnswer = currentAnswer,
-            questionIndex = session.currentFieldIndex,
+            questionIndex = activePosition,
             totalQuestions = totalActive,
             canGoBack = session.canGoBack(),
             canSkip = !field.required,

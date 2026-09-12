@@ -3,6 +3,7 @@ package com.formsaathi.contracts
 import android.net.Uri
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormAnswer
+import com.formsaathi.model.GenerationResult
 import com.formsaathi.model.ParsedForm
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.model.ValidationResult
@@ -65,5 +66,5 @@ interface CompletedPdfGenerator {
         parsedForm: ParsedForm,
         answers: Map<String, FormAnswer>,
         outputUri: Uri
-    )
+    ): GenerationResult
 }
