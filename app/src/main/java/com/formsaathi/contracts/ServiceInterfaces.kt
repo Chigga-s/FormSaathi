@@ -59,6 +59,13 @@ interface AnswerProcessor {
 /**
  * Service interface for drawing answers over original PDF pages and producing a flattened PDF.
  * Implemented by Role 4 (feature/core-pdf).
+ *
+ * NOTE ON FROZEN CONTRACT REFINEMENT:
+ * The original frozen contract in PLAN(1).md specified `suspend fun generate(...): Unit`.
+ * In this implementation, the return type was refined to `GenerationResult` (wrapping a list
+ * of `TextFitWarning`s) so that CORE-5 text-fitting truncation warnings can be surfaced
+ * to the review screen and completed session state. This is a frozen-contract change
+ * requiring explicit team agreement across all roles before branch integration into main.
  */
 interface CompletedPdfGenerator {
     suspend fun generate(

@@ -17,18 +17,20 @@ Role 4 acts as the central spine and dependency wiring harness for the FormSaath
 2. **Frozen Service Interfaces & Fakes (`com.formsaathi.contracts`)**:
    - `FormParser`, `QuestionProvider`, `VoiceService`, `AnswerProcessor`, `CompletedPdfGenerator`.
    - Complete deterministic fake implementations (`FakeFormParser`, `FakeQuestionProvider`, `FakeVoiceService`, `FakeAnswerProcessor`, `FakeCompletedPdfGenerator`) allowing Role 1 (UI) to run independently without waiting for native or ML dependencies.
+   - **Contract Refinement Note**: `CompletedPdfGenerator.generate()` returns `GenerationResult` (wrapping `warnings: List<TextFitWarning>`) rather than `Unit`. This change is necessary for CORE-5 text-fitting truncation warnings to be surfaced to the review screen and completed session state. This modifies the frozen contract from `PLAN(1).md` and requires team agreement across all roles before branch integration into `main`.
 
 3. **Core State & Conversation Logic (`com.formsaathi.core`)**:
-   - `FormSession`: In-memory thread-safe state container tracking answers (`fieldId -> FormAnswer`), visited history, and language.
-   - `ConversationEngine`: Implements conditional skip rules (e.g. `SAME_AS_PERMANENT_ADDRESS` affirmative answers automatically copy to `CURRENT_ADDRESS` as `COPIED_BY_RULE` and skip the question).
+   - `FormSession`: In-memory state container tracking answers (`fieldId -> FormAnswer`), visited history, and language. Designed for single-threaded UI coordination via `FormSaathiCoordinator`.
+   - `ConversationEngine`: Implements the MVP conditional rule: answering affirmative ("yes") to `SAME_AS_PERMANENT_ADDRESS` automatically copies the permanent address answer to `CURRENT_ADDRESS` with `AnswerSource.COPIED_BY_RULE` and skips the duplicate question. Negative or alternative answers leave `CURRENT_ADDRESS` active for the user.
    - `FormUiState`: Immutable sealed hierarchy consumed by Jetpack Compose.
    - `FormSaathiCoordinator`: The central entry point for UI events (`startSession`, `switchLanguage`, `submitAnswer`, `skipCurrentField`, `previousField`, `updateAnswerInReview`, `generatePdf`).
    - `EngineFactory`: Factory for assembling coordinators using either deterministic mocks or production engines.
 
 4. **PDF Generation & Export Engine (`com.formsaathi.pdf`)**:
    - `AnswerTextFitter`: High-precision text fitting using `TextPaint` and `StaticLayout`. Auto-scales fonts (13sp down to 6.5sp), wraps multi-line addresses, applies 4% padding, and enforces strict canvas clipping to prevent text spilling onto adjacent form lines.
-   - `PdfPageComposer`: Scales background page bitmaps to PDF page points, converts normalized coordinates ($0.0 \dots 1.0$) to canvas coordinates, and overlays answer text with distinct pen-blue ink (`#0D2546`).
-   - `AndroidCompletedPdfGenerator`: Production `CompletedPdfGenerator` processing pages one-by-one with immediate `bitmap.recycle()` calls and strict stream closure to avoid Out-Of-Memory (OOM) errors.
+   - `PdfPageComposer`: Scales background page bitmaps to PDF page points, converts normalized coordinates ($0.0 \dots 1.0$) to canvas coordinates, and overlays answer text with distinct pen-blue ink (`#0D2546`). Returns text-fit warnings when text is clipped.
+   - `AndroidCompletedPdfGenerator`: Production `CompletedPdfGenerator` processing pages one-by-one with immediate `bitmap.recycle()` calls, dynamic scale capping to prevent OOM on large pages, and strict stream closure.
+   - `SamplePdfFactory`: Generates a valid multi-page source PDF matching `FakeFormParser` layout for realistic offline testing and mock sessions without network access.
    - `OutputFileManager`: Manages Storage Access Framework (`ACTION_CREATE_DOCUMENT`), internal cache PDFs, `FileProvider` content URIs, and Android View/Share intents without broad storage permissions.
 
 ---
@@ -38,7 +40,8 @@ Role 4 acts as the central spine and dependency wiring harness for the FormSaath
 ```text
 app/src/main/java/com/formsaathi/
 ├── model/
-│   └── DataContracts.kt
+│   ├── DataContracts.kt
+│   └── GenerationResult.kt
 ├── contracts/
 │   ├── ServiceInterfaces.kt
 │   └── FakeEngines.kt
@@ -52,6 +55,7 @@ app/src/main/java/com/formsaathi/
     ├── AnswerTextFitter.kt
     ├── PdfPageComposer.kt
     ├── AndroidCompletedPdfGenerator.kt
+    ├── SamplePdfFactory.kt
     └── OutputFileManager.kt
 ```
 
@@ -76,8 +80,11 @@ Replaces `FakeQuestionProvider`, `FakeVoiceService`, and `FakeAnswerProcessor` i
 
 ## 4. Verification & Testing
 
-Unit tests located under `app/src/test/java/com/formsaathi/`:
-- `ConversationEngineTest`: Verifies automated same-address copying, skipping, and index calculations.
-- `FormSessionTest`: Verifies state transitions, answer mutations, and navigation history.
-- `PdfPageComposerTest`: Verifies coordinate transform formulas and multi-line heuristics.
+### Unit Tests (`app/src/test/java/com/formsaathi/`)
+- `ConversationEngineTest`: Verifies automated same-address copying, non-address field preservation, skipping, and index calculations.
+- `FormSessionTest`: Verifies state transitions, answer mutations, active question position counting, and navigation history.
+- `PdfPageComposerTest`: Verifies coordinate transform formulas, CanvasRect dimensions, text-fit warning structures, and multi-line heuristics.
 - `FormSaathiCoordinatorTest`: Verifies end-to-end lifecycle from document parse to question progression, validation errors, and completed PDF export.
+
+### Instrumented Proof Tests (`app/src/androidTest/java/com/formsaathi/`)
+- `AndroidCompletedPdfGeneratorTest`: Verifies on Android that `SamplePdfFactory` creates a valid 2-page source PDF, `AndroidCompletedPdfGenerator` produces a valid non-empty output PDF with answers for both page 1 and page 2 (specifically verifying `field_annual_income`), preserves page order, and reopens cleanly via Android's `PdfRenderer`.
