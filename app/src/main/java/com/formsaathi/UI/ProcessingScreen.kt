@@ -38,6 +38,8 @@ enum class ProcessingStage {
 @Composable
 fun ProcessingScreen(
     currentStage: ProcessingStage,
+    pageIndex: Int = 0,
+    pageCount: Int = 0,
     errorMessage: String? = null,
     onRetry: () -> Unit,
     onCancel: () -> Unit
@@ -76,7 +78,11 @@ fun ProcessingScreen(
             )
 
             Text(
-                text = "Please wait while we prepare your form.",
+                text = if (pageCount > 1) {
+                    "Page ${pageIndex + 1} of $pageCount. Everything happens on this phone."
+                } else {
+                    "Everything happens on this phone. This can take a moment."
+                },
                 fontSize = 16.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(
                     alpha = 0.7f

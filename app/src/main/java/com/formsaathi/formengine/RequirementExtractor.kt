@@ -8,17 +8,23 @@ class RequirementExtractor {
         const val NEARBY_VERTICAL_DISTANCE = 0.05f
     }
 
+    /**
+     * Only full document names appear here. Bare keywords used to be aliases too,
+     * which turned ordinary field labels into attachment requirements: an
+     * "Aadhaar Number" field became a required Aadhaar card, and an
+     * "Applicant's Signature" caption became a required signature document.
+     */
     private val documentAliases = mapOf(
         "Aadhaar Card" to setOf(
             "aadhaar card",
             "aadhar card",
-            "aadhaar",
-            "aadhar"
+            "aadhaar card copy",
+            "copy of aadhaar card"
         ),
 
         "PAN Card" to setOf(
             "pan card",
-            "pan"
+            "copy of pan card"
         ),
 
         "Income Certificate" to setOf(
@@ -28,9 +34,9 @@ class RequirementExtractor {
 
         "Photograph" to setOf(
             "photograph",
-            "photo",
             "passport size photo",
-            "passport size photograph"
+            "passport size photograph",
+            "passport photo"
         ),
 
         "Residence Certificate" to setOf(
@@ -41,8 +47,9 @@ class RequirementExtractor {
         ),
 
         "Signature" to setOf(
-            "signature",
-            "applicant signature"
+            "specimen signature",
+            "attested signature",
+            "signature proof"
         )
     )
 

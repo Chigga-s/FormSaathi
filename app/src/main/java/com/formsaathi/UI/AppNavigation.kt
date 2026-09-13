@@ -39,8 +39,9 @@ import com.formsaathi.core.FormViewModel
 import com.formsaathi.model.AnswerSource
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.SupportedLanguage
+import com.formsaathi.BuildConfig
+import com.formsaathi.contracts.ParseStage
 import com.formsaathi.pdf.OutputFileManager
-import com.formsaathi.pdf.SamplePdfFactory
 import kotlinx.coroutines.delay
 
 object Routes {
@@ -90,13 +91,12 @@ fun FormSaathiNavigation(
     val pdfCreateLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
     ) { outputUri: Uri? ->
-        val targetUri = outputUri ?: run {
-            val cacheFile = output.createCachePdfFile(
-                "Completed_${model.selectedFileName ?: "Form.pdf"}"
-            )
-            output.getShareableUri(cacheFile)
+        // A null result means the user backed out of the save dialog. Generating
+        // anyway to a hidden cache file would report success for a file they
+        // never chose, so the review screen is simply left as it was.
+        if (outputUri != null) {
+            model.generate(outputUri)
         }
-        model.generate(targetUri)
     }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -114,18 +114,23 @@ fun FormSaathiNavigation(
     }
 
     BackHandler(enabled = !busy && !recording && !transcribing) {
-        if (navController.previousBackStackEntry != null) {
-            val currentRoute = navController.currentBackStackEntry?.destination?.route
-            if (currentRoute == Routes.QUESTIONS) {
+        if (navController.previousBackStackEntry == null) return@BackHandler
+        when (navController.currentBackStackEntry?.destination?.route) {
+            Routes.QUESTIONS -> {
                 val currentQ = state as? FormUiState.Questioning
                 if (currentQ?.canGoBack == true) {
                     model.previousField()
                 } else {
                     navController.popBackStack()
                 }
-            } else {
+            }
+            // Leaving Processing stops the parse. Without this, an abandoned OCR
+            // run keeps working and can navigate a screen the user already left.
+            Routes.PROCESSING -> {
+                model.cancelSession()
                 navController.popBackStack()
             }
+            else -> navController.popBackStack()
         }
     }
 
@@ -192,14 +197,14 @@ fun FormSaathiNavigation(
                 onClearPdf = {
                     model.clearSelection()
                 },
-                onTrySampleForm = {
-                    val sampleFile = SamplePdfFactory.createSamplePdf(context.cacheDir)
-                    val sampleUri = Uri.fromFile(sampleFile)
-                    model.startSampleSession(sampleUri, sampleFile.name)
+                onTryDemoForm = { demo ->
+                    model.startBundledDemoSession(demo.assetName, demo.displayName)
                     navController.navigate(Routes.PROCESSING)
                 },
-                onOpenHarness = {
-                    navController.navigate(Routes.HARNESS)
+                onOpenHarness = if (BuildConfig.DEBUG) {
+                    { navController.navigate(Routes.HARNESS) }
+                } else {
+                    null
                 }
             )
         }
@@ -208,28 +213,25 @@ fun FormSaathiNavigation(
         // PROCESSING
         // ---------------------------------------------------------
         composable(Routes.PROCESSING) {
-            val stage = when (val s = state) {
-                is FormUiState.Parsing -> when {
-                    s.stageMessage.contains("render", ignoreCase = true) -> ProcessingStage.RENDERING
-                    s.stageMessage.contains("question", ignoreCase = true) ||
-                    s.stageMessage.contains("prepare", ignoreCase = true) -> ProcessingStage.PREPARING_QUESTIONS
-                    s.stageMessage.contains("ocr", ignoreCase = true) ||
-                    s.stageMessage.contains("read", ignoreCase = true) ||
-                    s.stageMessage.contains("text", ignoreCase = true) ||
-                    s.stageMessage.contains("detect", ignoreCase = true) -> ProcessingStage.READING_TEXT
-                    else -> ProcessingStage.PREPARING_QUESTIONS
-                }
-                else -> ProcessingStage.PREPARING_QUESTIONS
+            val parsing = state as? FormUiState.Parsing
+            val stage = when (parsing?.stage) {
+                ParseStage.RENDERING -> ProcessingStage.RENDERING
+                ParseStage.READING_TEXT -> ProcessingStage.READING_TEXT
+                ParseStage.PREPARING_QUESTIONS -> ProcessingStage.PREPARING_QUESTIONS
+                null -> ProcessingStage.RENDERING
             }
             val errorMessage = (state as? FormUiState.Error)?.message
 
             ProcessingScreen(
                 currentStage = stage,
+                pageIndex = parsing?.pageIndex ?: 0,
+                pageCount = parsing?.pageCount ?: 0,
                 errorMessage = errorMessage,
                 onRetry = {
                     model.retrySession()
                 },
                 onCancel = {
+                    model.cancelSession()
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) {
                             inclusive = true
@@ -238,19 +240,21 @@ fun FormSaathiNavigation(
                 }
             )
 
+            // Every terminal state leads somewhere. Idle only happens when the
+            // parse was cancelled, and leaving the screen spinning on it is the
+            // stuck-on-Processing bug this guards against.
             LaunchedEffect(state) {
-                if (state is FormUiState.Questioning) {
-                    navController.navigate(Routes.QUESTIONS) {
-                        popUpTo(Routes.PROCESSING) {
-                            inclusive = true
-                        }
+                when (state) {
+                    is FormUiState.Questioning -> navController.navigate(Routes.QUESTIONS) {
+                        popUpTo(Routes.PROCESSING) { inclusive = true }
                     }
-                } else if (state is FormUiState.Reviewing) {
-                    navController.navigate(Routes.REVIEW) {
-                        popUpTo(Routes.PROCESSING) {
-                            inclusive = true
-                        }
+                    is FormUiState.Reviewing -> navController.navigate(Routes.REVIEW) {
+                        popUpTo(Routes.PROCESSING) { inclusive = true }
                     }
+                    is FormUiState.Idle -> navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                    else -> Unit
                 }
             }
         }
@@ -292,22 +296,16 @@ fun FormSaathiNavigation(
 
                         if (recording) {
                             Text(
-                                text = "Recording… tap Stop, or wait up to 10 seconds",
+                                text = getQuestionStrings(current.language).recording,
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
                             )
-                            Button(
-                                onClick = { model.stopVoice() },
-                                modifier = Modifier.padding(horizontal = 24.dp)
-                            ) {
-                                Text("Stop recording")
-                            }
                         }
 
                         if (transcribing) {
                             Text(
-                                text = "Transcribing your answer…",
+                                text = getQuestionStrings(current.language).transcribing,
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
@@ -350,7 +348,10 @@ fun FormSaathiNavigation(
                             canSkip = current.canSkip,
                             photoMode = photoType,
                             photoAttached = photoType && draft.isNotBlank(),
-                            onAttachPhoto = { gallery.launch("image/*") }
+                            onAttachPhoto = { gallery.launch("image/*") },
+                            isRecording = recording,
+                            isTranscribing = transcribing,
+                            language = current.language
                         )
                     }
                 }
@@ -386,21 +387,23 @@ fun FormSaathiNavigation(
                                 lowConfidence = field.confidence < 0.75f,
                                 unknown = field.type == FieldType.UNKNOWN,
                                 fieldId = field.id,
-                                manualStep = ans?.source == AnswerSource.PHOTO || isPhoto
+                                manualStep = ans?.source == AnswerSource.PHOTO || isPhoto,
+                                copiedByRule = ans?.source == AnswerSource.COPIED_BY_RULE
                             )
                         },
                         requiredDocuments = current.documents.map { doc ->
                             ReviewDocument(doc.name, doc.requirement)
                         },
                         onEditField = { reviewField ->
-                            model.jumpToField(reviewField.fieldId)
+                            model.jumpToField(reviewField.fieldId, fromReview = true)
                             navController.navigate(Routes.QUESTIONS)
                         },
                         onCreatePdf = {
                             pdfCreateLauncher.launch("Completed_${model.selectedFileName ?: "Form.pdf"}")
                         },
                         enabled = !busy,
-                        isGenerating = current.isGenerating || busy
+                        isGenerating = current.isGenerating || busy,
+                        warnings = current.warnings
                     )
                 }
                 is FormUiState.Completed -> {
@@ -490,7 +493,12 @@ fun FormSaathiNavigation(
         // ---------------------------------------------------------
         // HARNESS (Developer Test Harness)
         // ---------------------------------------------------------
+        // Debug-only developer harness. Not reachable from a release build.
         composable(Routes.HARNESS) {
+            if (!BuildConfig.DEBUG) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+                return@composable
+            }
             Role4HarnessScreen(
                 initialCoordinator = model.coordinator,
                 outputFileManager = output,

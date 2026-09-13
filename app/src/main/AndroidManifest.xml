@@ -1,12 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Role 3 audio permission for offline voice answering -->
+    <!-- Offline voice answering. The only permission the app asks for. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-
-
-    <!-- No INTERNET permission is declared to ensure strict on-device privacy guarantee -->
+    <!--
+        ML Kit depends on Google's datatransport logging library, whose manifest
+        merges INTERNET and ACCESS_NETWORK_STATE into every app that uses it. Both
+        are stripped here so the installed APK genuinely holds no network
+        permission: the bundled text recognisers run entirely on device, and the
+        only thing the removal disables is Google's usage telemetry upload. Verify
+        with `aapt dump permissions` or `adb shell dumpsys package com.formsaathi`.
+    -->
+    <uses-permission
+        android:name="android.permission.INTERNET"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
 
     <application
         android:allowBackup="true"

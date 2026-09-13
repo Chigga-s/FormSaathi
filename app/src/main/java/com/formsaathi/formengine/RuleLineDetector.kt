@@ -19,8 +19,11 @@ data class RuleLine(
 
 /**
  * Finds the printed underlines that mark where answers go on a form.
- * Pure-pixel scan over a luminance array so the core logic is JVM-testable;
- * only [luminanceOf] touches Android graphics classes.
+ *
+ * Pure-pixel scan over a luminance array so the core logic is JVM-testable; only
+ * [luminanceOf] touches Android graphics classes. Every qualifying run on a row is
+ * kept, so two rules printed side by side (a date line next to a signature line)
+ * are both found.
  */
 object RuleLineDetector {
 
@@ -48,46 +51,28 @@ object RuleLineDetector {
         height: Int,
         pageIndex: Int
     ): List<RuleLine> {
-        require(luminance.size == width * height) {
-            "Luminance size ${luminance.size} != ${width}x$height"
-        }
         val minRun = (width * MIN_RUN_FRACTION).toInt().coerceAtLeast(1)
-        val rules = mutableListOf<RuleLine>()
-        var y = 0
-        while (y < height) {
-            val run = longestDarkRun(luminance, width, y)
-            if (run == null || run.second - run.first < minRun) {
-                y++
-                continue
-            }
-            var bandTop = y
-            var bandBottom = y
-            var bandStart = run.first
-            var bandEnd = run.second
-            while (bandBottom + 1 < height &&
-                bandBottom - bandTop + 1 < MAX_THICKNESS_PX
-            ) {
-                val next = longestDarkRun(luminance, width, bandBottom + 1)
-                if (next == null || next.second - next.first < minRun) break
-                val overlapStart = maxOf(bandStart, next.first)
-                val overlapEnd = minOf(bandEnd, next.second)
-                if (overlapEnd - overlapStart < minRun / 2) break
-                bandStart = minOf(bandStart, next.first)
-                bandEnd = maxOf(bandEnd, next.second)
-                bandBottom++
-            }
-            rules.add(
+        return PageBandScanner.scan(
+            luminance = luminance,
+            width = width,
+            height = height,
+            threshold = DARK_THRESHOLD,
+            minRun = minRun,
+            overlapFraction = 0.5f,
+            intersectColumns = false
+        )
+            // Anything thicker than a printed rule is a filled block or a box
+            // border pair, not an underline an answer can sit on.
+            .filter { it.height <= MAX_THICKNESS_PX }
+            .map { band ->
                 RuleLine(
                     pageIndex = pageIndex,
-                    yTop = bandTop.toFloat() / height,
-                    yBottom = (bandBottom + 1).toFloat() / height,
-                    xStart = bandStart.toFloat() / width,
-                    xEnd = (bandEnd + 1).toFloat() / width
+                    yTop = band.top.toFloat() / height,
+                    yBottom = band.bottom.toFloat() / height,
+                    xStart = band.left.toFloat() / width,
+                    xEnd = band.right.toFloat() / width
                 )
-            )
-            y = bandBottom + 1
-        }
-        return rules
+            }
     }
 
     fun normalizedBox(rule: RuleLine): NormalizedRect {
@@ -99,25 +84,4 @@ object RuleLineDetector {
         )
     }
 
-    private fun longestDarkRun(
-        luminance: IntArray,
-        width: Int,
-        y: Int
-    ): Pair<Int, Int>? {
-        val base = y * width
-        var best: Pair<Int, Int>? = null
-        var runStart = -1
-        for (x in 0..width) {
-            val dark = x < width && luminance[base + x] < DARK_THRESHOLD
-            if (dark && runStart < 0) {
-                runStart = x
-            } else if (!dark && runStart >= 0) {
-                if (best == null || x - runStart > best.second - best.first) {
-                    best = runStart to x
-                }
-                runStart = -1
-            }
-        }
-        return best
-    }
 }

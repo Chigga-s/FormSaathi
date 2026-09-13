@@ -233,4 +233,40 @@ class RequirementExtractorTest {
             byName["Income Certificate"]?.requirement
         )
     }
+
+    @Test
+    fun fieldLabelsAreNotReportedAsRequiredDocuments() {
+        // A form that asks for an Aadhaar number and a signature is not a form
+        // that asks you to attach an Aadhaar card and a signature document.
+        val blocks = listOf(
+            OcrBlock(
+                text = "Aadhaar Number",
+                pageIndex = 0,
+                box = NormalizedRect(0.07f, 0.65f, 0.23f, 0.67f),
+                confidence = 0.9f,
+                blockIndex = 0,
+                lineIndex = 0
+            ),
+            OcrBlock(
+                text = "Applicant's Signature",
+                pageIndex = 0,
+                box = NormalizedRect(0.61f, 0.90f, 0.81f, 0.92f),
+                confidence = 0.9f,
+                blockIndex = 1,
+                lineIndex = 0
+            ),
+            OcrBlock(
+                text = "Photo",
+                pageIndex = 0,
+                box = NormalizedRect(0.07f, 0.30f, 0.15f, 0.32f),
+                confidence = 0.9f,
+                blockIndex = 2,
+                lineIndex = 0
+            )
+        )
+
+        val result = RequirementExtractor().extract(blocks)
+
+        assertEquals("Field labels must not become attachments: $result", 0, result.size)
+    }
 }

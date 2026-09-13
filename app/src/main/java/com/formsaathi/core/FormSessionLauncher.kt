@@ -3,76 +3,78 @@ package com.formsaathi.core
 import android.net.Uri
 import com.formsaathi.model.SupportedLanguage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * Manages coordinator instance ownership and active form session launching.
- * Guarantees that the exact coordinator instance used to start parsing is retained
- * and observed across all screen navigation transitions and recompositions.
+ * Owns the coordinator instance for the current session.
+ *
+ * The instance that starts parsing is the instance stored in [activeCoordinator],
+ * so the UI observes the same object across recomposition and navigation. A
+ * previous session's parse is cancelled before a new one starts, so an abandoned
+ * OCR run cannot keep emitting into a screen the user has moved past.
  */
 class FormSessionLauncher(
     private val coordinatorFactory: (useRealParser: Boolean) -> FormSaathiCoordinator
 ) {
-    /**
-     * Currently active coordinator for the ongoing or most recent session.
-     */
     var activeCoordinator: FormSaathiCoordinator = coordinatorFactory(false)
         private set
 
-    /**
-     * Flag indicating whether the active session was launched with the real OCR parser.
-     */
+    /** True when the active session was launched with the real OCR parser. */
     var isRealParserActive: Boolean = false
         private set
 
+    private var activeJob: Job? = null
+
     /**
-     * Starts a session for a real PDF using a newly created real-parser coordinator.
-     * Ensures parsing begins on the exact coordinator instance that will be observed by the UI.
+     * Starts a session for a real PDF on a freshly created real-parser coordinator.
      */
     fun startRealSession(
         uri: Uri,
         language: SupportedLanguage,
         scope: CoroutineScope
-    ): FormSaathiCoordinator {
-        val coordinator = coordinatorFactory(true)
-        activeCoordinator = coordinator
-        isRealParserActive = true
-        scope.launch {
-            coordinator.startSession(uri, language)
-        }
-        return coordinator
-    }
+    ): FormSaathiCoordinator = start(useRealParser = true, uri = uri, language = language, scope = scope)
 
     /**
-     * Starts a session for the sample mock form using a newly created mock-parser coordinator.
-     * Ensures parsing begins on the exact coordinator instance that will be observed by the UI.
+     * Starts a session on a fake-engine coordinator. Debug harness and tests only.
      */
-    fun startSampleSession(
+    fun startMockSession(
         uri: Uri,
         language: SupportedLanguage,
         scope: CoroutineScope
-    ): FormSaathiCoordinator {
-        val coordinator = coordinatorFactory(false)
-        activeCoordinator = coordinator
-        isRealParserActive = false
-        scope.launch {
-            coordinator.startSession(uri, language)
-        }
-        return coordinator
-    }
+    ): FormSaathiCoordinator = start(useRealParser = false, uri = uri, language = language, scope = scope)
 
     /**
-     * Retries the current session with the appropriate coordinator type.
+     * Re-runs the current session with the same kind of parser.
      */
     fun retrySession(
         uri: Uri,
         language: SupportedLanguage,
         scope: CoroutineScope
+    ): FormSaathiCoordinator = start(isRealParserActive, uri, language, scope)
+
+    /** Stops any parse in flight without starting a new session. */
+    fun cancelActiveSession() {
+        activeCoordinator.cancelParsing()
+        activeJob?.cancel()
+        activeJob = null
+    }
+
+    private fun start(
+        useRealParser: Boolean,
+        uri: Uri,
+        language: SupportedLanguage,
+        scope: CoroutineScope
     ): FormSaathiCoordinator {
-        return if (isRealParserActive) {
-            startRealSession(uri, language, scope)
-        } else {
-            startSampleSession(uri, language, scope)
+        activeCoordinator.cancelParsing()
+        activeJob?.cancel()
+
+        val coordinator = coordinatorFactory(useRealParser)
+        activeCoordinator = coordinator
+        isRealParserActive = useRealParser
+        activeJob = scope.launch {
+            coordinator.startSession(uri, language)
         }
+        return coordinator
     }
 }

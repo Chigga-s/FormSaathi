@@ -10,6 +10,7 @@ class WhisperManager {
     fun loadModel(path: String) {
         check(!closed) { "Voice service is closed" }
         if (handle != 0L) return
+        if (!WhisperBridge.isAvailable) throw VoiceException.VoiceNotBuilt()
         try {
             handle = WhisperBridge.loadModel(path)
         } catch (error: LinkageError) {

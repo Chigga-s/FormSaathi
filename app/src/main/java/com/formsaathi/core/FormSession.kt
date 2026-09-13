@@ -21,6 +21,14 @@ class FormSession(
     var currentFieldIndex: Int = 0
         private set
 
+    /**
+     * True while the user is correcting one answer reached from the review screen.
+     * Answering it returns them to review instead of marching them through every
+     * remaining question again.
+     */
+    var editingFromReview: Boolean = false
+        private set
+
     init {
         if (parsedForm.fields.isNotEmpty()) {
             history.add(0)
@@ -107,11 +115,17 @@ class FormSession(
     /**
      * Jumps directly to a field (used when user edits an answer from the Review screen).
      */
-    fun jumpToField(index: Int) {
+    fun jumpToField(index: Int, fromReview: Boolean = false) {
         if (index in parsedForm.fields.indices) {
             currentFieldIndex = index
             history.add(index)
+            editingFromReview = fromReview
         }
+    }
+
+    /** Clears the review-edit flag once the user has returned to review. */
+    fun clearReviewEdit() {
+        editingFromReview = false
     }
 
     /**

@@ -2,6 +2,7 @@ package com.formsaathi.core
 
 import android.app.Application
 import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.formsaathi.answer.RuleBasedAnswerProcessor
@@ -18,12 +19,15 @@ import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.voice.RealVoiceService
 import com.formsaathi.voice.VoiceController
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class FormViewModel(application: Application) : AndroidViewModel(application) {
     private val speech = RealVoiceService(application)
@@ -36,8 +40,8 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     var selectedUri: Uri? = null
         private set
 
-    private val parser = RealFormParser(
-        AndroidPdfPageRenderer(application),
+    private fun createRealParser() = RealFormParser(
+        AndroidPdfPageRenderer(getApplication()),
         ocr,
         LabelDetector(),
         FieldMapper(),
@@ -46,9 +50,12 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     private fun createRealCoordinator(): FormSaathiCoordinator {
+        // A fresh parser per session: the coordinator registers a progress
+        // listener on it for the duration of the parse, and sharing one parser
+        // across overlapping sessions would cross those listeners.
         return EngineFactory.createRealCoordinator(
             context = getApplication(),
-            formParser = parser,
+            formParser = createRealParser(),
             questionProvider = JsonQuestionProvider(getApplication()),
             voiceService = speech,
             answerProcessor = RuleBasedAnswerProcessor()
@@ -120,13 +127,40 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
         observeCoordinatorState(newCoordinator)
     }
 
-    fun startSampleSession(sampleUri: Uri, fileName: String? = "Sample_Form.pdf") {
+    /**
+     * Opens one of the demo forms shipped in assets through the ordinary real
+     * pipeline. The demo path runs the same renderer, OCR and parser as an
+     * imported PDF, so what it shows is what the app actually does.
+     */
+    fun startBundledDemoSession(assetName: String, displayName: String) {
         if (_busy.value) return
-        selectedUri = sampleUri
-        selectedFileName = fileName
-        draftField = null
-        val newCoordinator = sessionLauncher.startSampleSession(sampleUri, language, viewModelScope)
-        observeCoordinatorState(newCoordinator)
+        viewModelScope.launch {
+            try {
+                val uri = withContext(Dispatchers.IO) { copyDemoFormToCache(assetName) }
+                startRealSession(uri, displayName)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _voiceError.value = null
+                sessionLauncher.cancelActiveSession()
+                _state.value = FormUiState.Error(
+                    message = "The bundled demo form could not be opened: ${error.message ?: "unknown error"}",
+                    recoverable = false
+                )
+            }
+        }
+    }
+
+    private fun copyDemoFormToCache(assetName: String): Uri {
+        val context = getApplication<Application>()
+        val demoDir = File(context.cacheDir, "demo-forms").apply { mkdirs() }
+        val target = File(demoDir, assetName)
+        if (!target.isFile || target.length() == 0L) {
+            context.assets.open("samples/$assetName").use { input ->
+                target.outputStream().use { input.copyTo(it) }
+            }
+        }
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
     }
 
     fun retrySession() {
@@ -136,17 +170,17 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
         observeCoordinatorState(newCoordinator)
     }
 
-    fun clearSelection() {
-        selectedUri = null
-        selectedFileName = null
+    /** Stops an in-flight parse when the user backs out of the processing screen. */
+    fun cancelSession() {
+        sessionLauncher.cancelActiveSession()
         draftField = null
     }
 
-    /**
-     * Backward-compatible entry point for starting a real PDF session.
-     */
-    fun start(uri: Uri) {
-        startRealSession(uri)
+    fun clearSelection() {
+        sessionLauncher.cancelActiveSession()
+        selectedUri = null
+        selectedFileName = null
+        draftField = null
     }
 
     fun edit(value: String) {
@@ -163,16 +197,20 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
 
     fun attachPhoto(uri: Uri) {
         if (_busy.value || recording.value || _transcribing.value) return
+        val field = draftField ?: return
         viewModelScope.launch {
             _busy.value = true
             try {
-                val photosDir = java.io.File(getApplication<Application>().filesDir, "photos")
-                    .apply { mkdirs() }
-                val target = java.io.File(photosDir, "photo_${draftField ?: "field"}_${System.currentTimeMillis()}.jpg")
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { input.copyTo(it) }
-                } ?: throw IllegalStateException("Unable to read selected photo")
-                if (draftField != null) {
+                val target = withContext(Dispatchers.IO) {
+                    val photosDir = File(getApplication<Application>().filesDir, "photos")
+                        .apply { mkdirs() }
+                    val file = File(photosDir, "photo_${field}_${System.currentTimeMillis()}.jpg")
+                    getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
+                        file.outputStream().use { input.copyTo(it) }
+                    } ?: throw IllegalStateException("Unable to read the selected image")
+                    file
+                }
+                if (field == draftField) {
                     _draft.value = target.absolutePath
                     _source.value = AnswerSource.PHOTO
                     _voiceError.value = null
@@ -195,8 +233,8 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
         coordinator.skipCurrentField()
     }
 
-    fun jumpToField(fieldId: String) {
-        coordinator.jumpToField(fieldId)
+    fun jumpToField(fieldId: String, fromReview: Boolean = false) {
+        coordinator.jumpToField(fieldId, fromReview)
     }
 
     fun updateAnswerInReview(fieldId: String, newRawText: String) {
@@ -204,22 +242,23 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startVoice() {
-        if (_busy.value) return
+        if (_busy.value || recording.value || _transcribing.value) return
         try {
             _voiceError.value = null
             voice.startListening()
             recordingTimeout = viewModelScope.launch {
-                delay(10000)
+                delay(MAX_RECORDING_MS)
                 recordingTimeout = null
                 stopVoice()
             }
         } catch (error: Exception) {
-            _voiceError.value = error.message
+            _voiceError.value = error.message ?: "Unable to start recording. You can type your answer."
         }
     }
 
     fun stopVoice() {
-        if (_busy.value) return
+        if (_busy.value || _transcribing.value) return
+        if (!recording.value) return
         recordingTimeout?.cancel()
         recordingTimeout = null
         val field = draftField
@@ -228,8 +267,14 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
             _busy.value = true
             _transcribing.value = true
             try {
-                val transcript = voice.stopListening(selectedLanguage)
-                if (field == draftField) {
+                val transcript = voice.stopListening(selectedLanguage).trim()
+                if (transcript.isEmpty()) {
+                    // Defensive: the voice service already rejects empty and
+                    // [BLANK_AUDIO] results. A blank transcript must never be
+                    // written into the form as if it were an answer.
+                    _voiceError.value =
+                        "No speech detected — try again or type your answer."
+                } else if (field == draftField) {
                     _draft.value = transcript
                     _source.value = AnswerSource.VOICE
                 }
@@ -237,6 +282,7 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
                 throw error
             } catch (error: Exception) {
                 _voiceError.value = error.message
+                    ?: "Voice input is unavailable. You can type your answer."
             } finally {
                 _transcribing.value = false
                 _busy.value = false
@@ -267,7 +313,12 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        sessionLauncher.cancelActiveSession()
         voice.close()
         ocr.close()
+    }
+
+    private companion object {
+        const val MAX_RECORDING_MS = 10_000L
     }
 }

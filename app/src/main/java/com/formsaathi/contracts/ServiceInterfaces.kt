@@ -3,35 +3,56 @@ package com.formsaathi.contracts
 import android.net.Uri
 import com.formsaathi.model.FieldType
 import com.formsaathi.model.FormAnswer
+import com.formsaathi.model.FormField
 import com.formsaathi.model.GenerationResult
 import com.formsaathi.model.ParsedForm
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.model.ValidationResult
 import java.io.File
 
-/**
- * Service interface for parsing a government PDF into structured fields and page metadata.
- * Implemented by Role 2 (feature/form-engine).
- */
+/** Parses a government PDF into structured fields and page metadata. */
 interface FormParser {
     suspend fun parse(uri: Uri): ParsedForm
 }
 
 /**
- * Service interface for providing simplified multilingual questions.
- * Implemented by Role 3 (feature/voice-language).
+ * Stage a parser is currently working through, reported so the UI can show real
+ * progress and the coordinator can tell a slow document apart from a stalled one.
  */
+enum class ParseStage {
+    RENDERING,
+    READING_TEXT,
+    PREPARING_QUESTIONS
+}
+
+/**
+ * Implemented by parsers that can report intermediate progress. The coordinator
+ * uses the reports to reset its stall watchdog, so a long but healthy OCR run is
+ * never interrupted while a genuinely hung one still fails recoverably.
+ */
+interface ProgressReportingFormParser : FormParser {
+    fun setProgressListener(listener: ((ParseStage, Int, Int) -> Unit)?)
+}
+
+/** Supplies the simplified question shown for a detected field, per language. */
 interface QuestionProvider {
     fun questionFor(
         fieldType: FieldType,
         language: SupportedLanguage
     ): String
+
+    /**
+     * Question for one detected field. Implementations must name the label printed
+     * on the form when the field type is unknown, so the user always understands
+     * what is being asked instead of seeing a generic prompt.
+     */
+    fun questionFor(
+        field: FormField,
+        language: SupportedLanguage
+    ): String = questionFor(field.type, language)
 }
 
-/**
- * Service interface for offline speech transcription.
- * Implemented by Role 3 (feature/voice-language via whisper.cpp).
- */
+/** Offline speech transcription. Backed by whisper.cpp in the real implementation. */
 interface VoiceService {
     suspend fun transcribe(
         audioFile: File,
@@ -39,10 +60,7 @@ interface VoiceService {
     ): String
 }
 
-/**
- * Service interface for normalizing raw user answers and validating constraints.
- * Implemented by Role 3 (feature/voice-language).
- */
+/** Normalizes raw user answers and validates them against field constraints. */
 interface AnswerProcessor {
     fun normalize(
         fieldType: FieldType,
@@ -57,15 +75,11 @@ interface AnswerProcessor {
 }
 
 /**
- * Service interface for drawing answers over original PDF pages and producing a flattened PDF.
- * Implemented by Role 4 (feature/core-pdf).
+ * Draws answers over the original PDF pages and writes a flattened PDF.
  *
- * NOTE ON FROZEN CONTRACT REFINEMENT:
- * The original frozen contract in PLAN(1).md specified `suspend fun generate(...): Unit`.
- * In this implementation, the return type was refined to `GenerationResult` (wrapping a list
- * of `TextFitWarning`s) so that CORE-5 text-fitting truncation warnings can be surfaced
- * to the review screen and completed session state. This is a frozen-contract change
- * requiring explicit team agreement across all roles before branch integration into main.
+ * Returns a [GenerationResult] rather than the `Unit` in PLAN(1).md so text that
+ * had to be shrunk or clipped to fit can be reported to the user instead of being
+ * silently accepted.
  */
 interface CompletedPdfGenerator {
     suspend fun generate(

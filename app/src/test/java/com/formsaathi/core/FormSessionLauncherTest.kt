@@ -62,7 +62,7 @@ class FormSessionLauncherTest {
     }
 
     @Test
-    fun testStartSampleSession_createsMockCoordinatorAndAssignsActive() = runTest {
+    fun testStartMockSession_createsMockCoordinatorAndAssignsActive() = runTest {
         var requestedParserType: Boolean? = null
 
         val launcher = FormSessionLauncher { useRealParser ->
@@ -70,7 +70,7 @@ class FormSessionLauncherTest {
             createTestCoordinator()
         }
 
-        val returnedCoordinator = launcher.startSampleSession(
+        val returnedCoordinator = launcher.startMockSession(
             uri = mockUri,
             language = SupportedLanguage.HINDI,
             scope = this
@@ -101,7 +101,7 @@ class FormSessionLauncherTest {
         assertSame(retriedCoordinator, launcher.activeCoordinator)
 
         // 3. Start sample session
-        launcher.startSampleSession(mockUri, SupportedLanguage.ENGLISH, this)
+        launcher.startMockSession(mockUri, SupportedLanguage.ENGLISH, this)
         assertEquals(listOf(false, true, true, false), parserTypes)
         assertFalse(launcher.isRealParserActive)
 

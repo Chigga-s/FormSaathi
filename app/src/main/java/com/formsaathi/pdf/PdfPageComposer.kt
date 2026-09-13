@@ -160,12 +160,25 @@ class PdfPageComposer(
      * Determines whether a field should allow multi-line text wrapping.
      */
     fun isMultiLineField(field: FormField): Boolean {
-        if (field.type == FieldType.PERMANENT_ADDRESS || field.type == FieldType.CURRENT_ADDRESS) {
-            return true
+        return when (field.type) {
+            // Addresses wrap whatever the printed box looks like.
+            FieldType.PERMANENT_ADDRESS, FieldType.CURRENT_ADDRESS -> true
+
+            // Every other canonical field holds one short value. A printed box
+            // that happens to be tall is still a single-line field, and wrapping
+            // a phone number across two lines looks wrong on the form.
+            FieldType.UNKNOWN -> {
+                if (field.answerBox.height >= MULTI_LINE_HEIGHT) return true
+                val aspectRatio = field.answerBox.height / field.answerBox.width.coerceAtLeast(0.01f)
+                aspectRatio > 0.35f
+            }
+
+            else -> false
         }
-        // If the box height is tall relative to its width, treat as multi-line
-        val aspectRatio = field.answerBox.height / field.answerBox.width.coerceAtLeast(0.01f)
-        return aspectRatio > 0.35f
+    }
+
+    private companion object {
+        /** Roughly two lines of body text on an A4 page. */
+        const val MULTI_LINE_HEIGHT = 0.035f
     }
 }
-

@@ -17,5 +17,6 @@
   "ANNUAL_INCOME": "What is your total annual income in Rupees?",
   "PHOTO": "Please provide your photograph.",
   "SIGNATURE": "Please provide your signature.",
-  "UNKNOWN": "Please provide an answer for this field."
+  "UNKNOWN": "Please provide an answer for this field.",
+  "UNKNOWN_WITH_LABEL": "Please enter: %s"
 }

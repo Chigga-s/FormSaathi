@@ -4,6 +4,8 @@ import android.net.Uri
 import com.formsaathi.contracts.AnswerProcessor
 import com.formsaathi.contracts.CompletedPdfGenerator
 import com.formsaathi.contracts.FormParser
+import com.formsaathi.contracts.ParseStage
+import com.formsaathi.contracts.ProgressReportingFormParser
 import com.formsaathi.contracts.QuestionProvider
 import com.formsaathi.contracts.VoiceService
 import com.formsaathi.model.AnswerSource
@@ -13,8 +15,12 @@ import com.formsaathi.model.FormField
 import com.formsaathi.model.SupportedLanguage
 import com.formsaathi.model.ValidationResult
 import java.io.File
-import kotlinx.coroutines.TimeoutCancellationException
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +29,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
 
 /**
  * Central coordinator orchestrating FormSaathi's session lifecycle, conversation flow,
@@ -36,7 +41,14 @@ class FormSaathiCoordinator(
     private val answerProcessor: AnswerProcessor,
     private val pdfGenerator: CompletedPdfGenerator,
     private val conversationEngine: ConversationEngine = ConversationEngine(),
-    private val parseTimeoutMs: Long = 35_000L
+    /**
+     * How long the parser may report no progress at all before the run is treated
+     * as hung. This is deliberately not a total budget: a large real form may take
+     * minutes of legitimate on-device OCR, and interrupting that was a source of
+     * false failures. The user can cancel at any point regardless.
+     */
+    private val stallTimeoutMs: Long = 90_000L,
+    private val nowMs: () -> Long = System::currentTimeMillis
 ) {
     private val _uiState = MutableStateFlow<FormUiState>(FormUiState.Idle)
     val uiState: StateFlow<FormUiState> = _uiState.asStateFlow()
@@ -44,72 +56,104 @@ class FormSaathiCoordinator(
     private val mutex = Mutex()
     private var activeSession: FormSession? = null
     private var sourcePdfUri: Uri? = null
+    private var parseJob: Job? = null
+
+    /** Marks a parse aborted by the stall watchdog rather than by the user. */
+    private class StalledParseException : CancellationException("Parsing stalled")
 
     /**
      * Initializes a new session with a selected PDF and target language.
+     *
+     * Runs until the document is parsed, the parser fails, the user cancels, or
+     * the parser stops reporting progress for [stallTimeoutMs]. Every outcome
+     * leaves the UI in a state it can act on, so Processing cannot spin forever.
      */
     suspend fun startSession(uri: Uri, language: SupportedLanguage = SupportedLanguage.ENGLISH) {
+        parseJob = currentCoroutineContext()[Job]
         mutex.withLock {
             sourcePdfUri = uri
-            _uiState.value = FormUiState.Parsing("Rendering PDF and identifying form fields...")
+            _uiState.value = FormUiState.Parsing(ParseStage.RENDERING)
         }
 
+        val progressParser = formParser as? ProgressReportingFormParser
+        val lastProgressAt = AtomicLong(nowMs())
+        var stalled = false
+
         try {
-            coroutineScope {
-                // Background stage progress updater that accurately reflects parsing phases
-                val stageJob = launch {
-                    delay(750)
-                    if (isActive && _uiState.value is FormUiState.Parsing) {
-                        _uiState.value = FormUiState.Parsing("Reading text and performing OCR...")
+            val parsedForm = coroutineScope {
+                progressParser?.setProgressListener { stage, pageIndex, pageCount ->
+                    lastProgressAt.set(nowMs())
+                    if (_uiState.value is FormUiState.Parsing) {
+                        _uiState.value = FormUiState.Parsing(stage, pageIndex, pageCount)
                     }
-                    delay(1750)
-                    if (isActive && _uiState.value is FormUiState.Parsing) {
-                        _uiState.value = FormUiState.Parsing("Detecting fields and preparing questions...")
+                }
+
+                val parsing = async { formParser.parse(uri) }
+
+                // Watches for a parser that has stopped making any progress at
+                // all. A slow page keeps reporting and is left alone.
+                val watchdog = launch {
+                    while (isActive) {
+                        delay(WATCHDOG_TICK_MS)
+                        if (nowMs() - lastProgressAt.get() >= stallTimeoutMs) {
+                            stalled = true
+                            parsing.cancel(StalledParseException())
+                            return@launch
+                        }
                     }
                 }
 
                 try {
-                    val parsedForm = withTimeout(parseTimeoutMs) {
-                        formParser.parse(uri)
-                    }
-
-                    stageJob.cancel()
-
-                    mutex.withLock {
-                        val session = FormSession(parsedForm, language)
-                        activeSession = session
-
-                        if (parsedForm.fields.isEmpty()) {
-                            _uiState.value = FormUiState.Reviewing(
-                                answers = emptyMap(),
-                                fields = emptyList(),
-                                documents = parsedForm.documents,
-                                language = language
-                            )
-                        } else {
-                            emitCurrentQuestion(session, null)
-                        }
-                    }
+                    parsing.await()
                 } finally {
-                    stageJob.cancel()
+                    watchdog.cancel()
                 }
             }
-        } catch (e: TimeoutCancellationException) {
+
             mutex.withLock {
+                val session = FormSession(parsedForm, language)
+                activeSession = session
+
+                if (parsedForm.fields.isEmpty()) {
+                    _uiState.value = FormUiState.Error(
+                        message = "No fillable fields were found on this form. FormSaathi supports a limited set of layouts; try one of the bundled demo forms.",
+                        recoverable = true
+                    )
+                } else {
+                    emitCurrentQuestion(session, null)
+                }
+            }
+        } catch (e: CancellationException) {
+            if (stalled) {
                 _uiState.value = FormUiState.Error(
-                    message = "Form processing timed out after ${parseTimeoutMs / 1000} seconds. The document might be too complex or unreadable. Please try again or select another form.",
+                    message = "This form stopped responding while it was being read. Tap Try again, or choose a different form.",
                     recoverable = true
                 )
+                return
             }
-        } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             mutex.withLock {
                 _uiState.value = FormUiState.Error(
-                    message = "Failed to parse document: ${e.localizedMessage ?: "Unknown error"}",
+                    message = "Could not read this PDF: ${e.localizedMessage ?: "unknown error"}. Tap Try again, or choose a different form.",
                     recoverable = true
                 )
             }
+        } finally {
+            progressParser?.setProgressListener(null)
+            parseJob = null
+        }
+    }
+
+    /**
+     * Stops an in-flight parse. Rendering and OCR observe cancellation between
+     * pages, so the work actually stops instead of continuing in the background.
+     */
+    fun cancelParsing() {
+        parseJob?.cancel()
+        parseJob = null
+        if (_uiState.value is FormUiState.Parsing) {
+            _uiState.value = FormUiState.Idle
         }
     }
 
@@ -181,6 +225,15 @@ class FormSaathiCoordinator(
                     session.removeAnswer(removeId)
                 }
 
+                // A question opened from the review screen returns there once it
+                // is answered; otherwise the user would have to walk forward
+                // through every remaining question to get back.
+                if (session.editingFromReview) {
+                    session.clearReviewEdit()
+                    emitReviewScreen(session)
+                    return@withLock true
+                }
+
                 // Advance to next field or transition to review
                 val hasNext = session.advance(conversationEngine)
                 if (hasNext) {
@@ -218,6 +271,13 @@ class FormSaathiCoordinator(
         // If field is marked required, disallow skipping
         if (currentField.required) {
             emitCurrentQuestion(session, "This field is required by the form.")
+            return
+        }
+
+        if (session.editingFromReview) {
+            session.clearReviewEdit()
+            session.removeAnswer(currentField.id)
+            emitReviewScreen(session)
             return
         }
 
@@ -313,11 +373,11 @@ class FormSaathiCoordinator(
     /**
      * Navigates from Review screen directly to a specific field.
      */
-    fun jumpToField(fieldId: String) {
+    fun jumpToField(fieldId: String, fromReview: Boolean = false) {
         val session = activeSession ?: return
         val index = session.parsedForm.fields.indexOfFirst { it.id == fieldId }
         if (index != -1) {
-            session.jumpToField(index)
+            session.jumpToField(index, fromReview)
             emitCurrentQuestion(session, null)
         }
     }
@@ -327,6 +387,7 @@ class FormSaathiCoordinator(
      */
     fun goToReview() {
         val session = activeSession ?: return
+        session.clearReviewEdit()
         emitReviewScreen(session)
     }
 
@@ -381,7 +442,7 @@ class FormSaathiCoordinator(
             return
         }
 
-        val questionText = questionProvider.questionFor(field.type, session.language)
+        val questionText = questionProvider.questionFor(field, session.language)
         val currentAnswer = session.getCurrentAnswer()
         val totalActive = session.getActiveQuestionsCount(conversationEngine)
         val activePosition = session.getActiveQuestionPosition(conversationEngine)
@@ -406,7 +467,12 @@ class FormSaathiCoordinator(
             fields = session.parsedForm.fields,
             documents = session.parsedForm.documents,
             language = session.language,
-            isGenerating = false
+            isGenerating = false,
+            warnings = session.parsedForm.warnings
         )
+    }
+
+    private companion object {
+        const val WATCHDOG_TICK_MS = 2_000L
     }
 }

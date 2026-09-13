@@ -35,7 +35,9 @@ data class ReviewField(
     val lowConfidence: Boolean = false,
     val unknown: Boolean = false,
     val fieldId: String = "",
-    val manualStep: Boolean = false
+    val manualStep: Boolean = false,
+    /** Filled automatically by the same-as-permanent-address rule. */
+    val copiedByRule: Boolean = false
 )
 
 data class ReviewDocument(
@@ -50,7 +52,9 @@ fun ReviewScreen(
     onEditField: (ReviewField) -> Unit,
     onCreatePdf: () -> Unit,
     enabled: Boolean = true,
-    isGenerating: Boolean = false
+    isGenerating: Boolean = false,
+    /** Fields the parser could not place confidently, in plain language. */
+    warnings: List<String> = emptyList()
 ) {
 
     Column(
@@ -86,6 +90,34 @@ fun ReviewScreen(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
+            if (warnings.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Check these by hand",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = FormSathiOrange
+                            )
+                            warnings.forEach { warning ->
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = warning,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             if (requiredDocuments.isNotEmpty()) {
 
@@ -195,6 +227,19 @@ fun ReviewScreen(
                                     fontSize = 17.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+
+                                if (field.copiedByRule) {
+
+                                    Spacer(
+                                        modifier = Modifier.height(6.dp)
+                                    )
+
+                                    Text(
+                                        text = "Copied from your permanent address. Edit it if it is different.",
+                                        fontSize = 13.sp,
+                                        color = FormSathiOrange
+                                    )
+                                }
 
                                 if (field.lowConfidence) {
 

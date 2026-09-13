@@ -6,7 +6,6 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -122,25 +121,12 @@ class AnswerTextFitter(
         return !overflows
     }
 
-    @Suppress("DEPRECATION")
     private fun createStaticLayout(text: CharSequence, paint: TextPaint, width: Int): StaticLayout {
         val safeWidth = width.coerceAtLeast(10)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            StaticLayout.Builder.obtain(text, 0, text.length, paint, safeWidth)
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                .setLineSpacing(0f, 1.0f)
-                .setIncludePad(false)
-                .build()
-        } else {
-            StaticLayout(
-                text,
-                paint,
-                safeWidth,
-                Layout.Alignment.ALIGN_NORMAL,
-                1.0f,
-                0f,
-                false
-            )
-        }
+        return StaticLayout.Builder.obtain(text, 0, text.length, paint, safeWidth)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setLineSpacing(0f, 1.0f)
+            .setIncludePad(false)
+            .build()
     }
 }

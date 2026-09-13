@@ -11,8 +11,17 @@ import java.nio.ByteOrder
 
 sealed class VoiceException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class MissingModel(cause: Throwable? = null) : VoiceException("Offline speech model is unavailable. You can still type your answer.", cause)
+    class VoiceNotBuilt : VoiceException("Offline voice input is not included in this build. Please type your answer.")
     class InvalidAudio : VoiceException("Record mono 16 kHz PCM audio, up to 10 seconds.")
-    class NoSpeech : VoiceException("No speech was detected. Please try again or type your answer.")
+    class NoSpeech : VoiceException("No speech detected — try again or type your answer.")
+    class MicrophoneSilenced : VoiceException(
+        "Your phone is blocking the microphone for this app, so nothing was recorded. " +
+            "Check the microphone permission and privacy settings, or type your answer."
+    )
+    class MicrophoneBusy : VoiceException(
+        "A call or another app is using the microphone, so nothing was recorded. " +
+            "End it and try again, or type your answer."
+    )
     class Inference(cause: Throwable? = null) : VoiceException("Offline transcription failed. Please try again or type your answer.", cause)
     class Recording(cause: Throwable? = null) : VoiceException("Unable to record audio. Check microphone permission.", cause)
 }

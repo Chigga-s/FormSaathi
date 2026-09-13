@@ -19,11 +19,17 @@ import com.formsaathi.formengine.MlKitOcrEngine
 import com.formsaathi.formengine.OcrScript
 import com.formsaathi.formengine.RealFormParser
 import com.formsaathi.formengine.RequirementExtractor
+import com.formsaathi.answer.RuleBasedAnswerProcessor
+import com.formsaathi.language.JsonQuestionProvider
 import com.formsaathi.pdf.AndroidCompletedPdfGenerator
+import com.formsaathi.voice.RealVoiceService
 
 /**
- * Factory for creating FormSaathiCoordinator instances with either mock or real engines.
- * Enables zero-coupling parallel development across all 4 hackathon roles.
+ * Builds coordinators from either the real engines or the fakes.
+ *
+ * The fakes exist for unit tests and the debug harness only. Anything reachable
+ * from the normal user flow must come from [createRealCoordinator]; a fake parser
+ * silently powering an imported PDF would draw answers at invented coordinates.
  */
 object EngineFactory {
 
@@ -46,8 +52,8 @@ object EngineFactory {
     }
 
     /**
-     * Creates a coordinator backed by mocks, with options to enable real PDF generator (Role 4)
-     * and/or real FormParser (Role 2).
+     * Coordinator backed by fakes, for unit tests and the debug harness.
+     * Never reachable from the normal user flow.
      */
     fun createMockCoordinator(
         context: Context? = null,
@@ -77,15 +83,15 @@ object EngineFactory {
     }
 
     /**
-     * Creates a production coordinator with real engine implementations from all roles.
-     * When Role 2 and Role 3 merge their implementations, they plug in here seamlessly.
+     * Production coordinator. Every default here is a real implementation so a
+     * missing argument can never downgrade the live flow to a fake engine.
      */
     fun createRealCoordinator(
         context: Context,
         formParser: FormParser = createRealFormParser(context),
-        questionProvider: QuestionProvider = FakeQuestionProvider(),
-        voiceService: VoiceService = FakeVoiceService(),
-        answerProcessor: AnswerProcessor = FakeAnswerProcessor(),
+        questionProvider: QuestionProvider = JsonQuestionProvider(context),
+        voiceService: VoiceService = RealVoiceService(context),
+        answerProcessor: AnswerProcessor = RuleBasedAnswerProcessor(),
         pdfGenerator: CompletedPdfGenerator = AndroidCompletedPdfGenerator(context),
         conversationEngine: ConversationEngine = ConversationEngine()
     ): FormSaathiCoordinator {

@@ -9,12 +9,13 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Generates a valid multi-page sample PDF matching the FakeFormParser field layout.
- * Used by the "Quick Mock Session" harness button to provide a real source PDF
- * that PdfRenderer can open, instead of an empty 0-byte file.
+ * Draws a throwaway two-page A4 PDF whose printed boxes line up with
+ * [com.formsaathi.contracts.FakeFormParser]'s invented coordinates, so the debug
+ * harness has a real file for PdfRenderer to open.
  *
- * The generated PDF has 2 pages at 595×842 points (A4). Every printed answer box
- * precisely matches the corresponding FormField.answerBox NormalizedRect in FakeFormParser.
+ * Debug harness and tests only. The demo forms offered to users live in
+ * `assets/samples/` and go through the real OCR pipeline; showing a generated
+ * stand-in would demonstrate placement the real parser never produced.
  */
 object SamplePdfFactory {
 

@@ -15,8 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +36,29 @@ import androidx.compose.ui.unit.sp
 import com.formsaathi.R
 import com.formsaathi.model.SupportedLanguage
 
+/**
+ * A form shipped inside the app so the demo runs with no file picker and no
+ * network. Both are parsed by the same real pipeline as an imported PDF.
+ */
+data class DemoForm(
+    val assetName: String,
+    val displayName: String,
+    val description: String
+)
+
+val BundledDemoForms = listOf(
+    DemoForm(
+        assetName = "FormSaathi_Test_Form_1_Simple.pdf",
+        displayName = "Citizen Services Application Form",
+        description = "Underlined fields, single column"
+    ),
+    DemoForm(
+        assetName = "FormSaathi_Test_Form_2_Boxed.pdf",
+        displayName = "General Application Form",
+        description = "Printed answer boxes on the right"
+    )
+)
+
 @Composable
 fun HomeScreen(
     language: SupportedLanguage,
@@ -46,7 +69,7 @@ fun HomeScreen(
     onToggleTheme: () -> Unit = {},
     onContinue: () -> Unit = {},
     onClearPdf: () -> Unit = {},
-    onTrySampleForm: (() -> Unit)? = null,
+    onTryDemoForm: ((DemoForm) -> Unit)? = null,
     onOpenHarness: (() -> Unit)? = null
 ) {
 
@@ -173,23 +196,40 @@ fun HomeScreen(
             )
         }
 
-        if (onTrySampleForm != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onTrySampleForm,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp)
-            ) {
-                Text(
-                    text = when (language) {
-                        SupportedLanguage.HINDI -> "नमूना फ़ॉर्म आज़माएँ (त्वरित डेमो)"
-                        SupportedLanguage.MARATHI -> "नमुना फॉर्म वापरून पहा (डेमो)"
-                        else -> "Try Sample Form (Quick Demo)"
-                    },
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
+        if (onTryDemoForm != null) {
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+                text = when (language) {
+                    SupportedLanguage.HINDI -> "या कोई नमूना फ़ॉर्म आज़माएँ"
+                    SupportedLanguage.MARATHI -> "किंवा नमुना फॉर्म वापरून पहा"
+                    else -> "Or try a bundled form"
+                },
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                fontSize = 14.sp
+            )
+            BundledDemoForms.forEach { demo ->
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { onTryDemoForm(demo) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = demo.displayName,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = demo.description,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                        )
+                    }
+                }
             }
         }
 
@@ -238,7 +278,7 @@ fun HomeScreen(
                 ) {
 
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = null
                     )
 
@@ -269,7 +309,7 @@ fun HomeScreen(
                     )
 
                     Icon(
-                        imageVector = Icons.Default.ArrowForward,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null
                     )
                 }

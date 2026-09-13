@@ -1,6 +1,7 @@
 package com.formsaathi.core
 
 import android.net.Uri
+import com.formsaathi.contracts.ParseStage
 import com.formsaathi.model.FormAnswer
 import com.formsaathi.model.FormField
 import com.formsaathi.model.RequiredDocument
@@ -17,10 +18,14 @@ sealed interface FormUiState {
     data object Idle : FormUiState
 
     /**
-     * Processing state during PDF rendering and OCR extraction.
+     * Processing state during PDF rendering and OCR extraction. Carries the real
+     * stage and page position reported by the parser so the screen never shows a
+     * stage the engine has not actually reached.
      */
     data class Parsing(
-        val stageMessage: String = "Reading document..."
+        val stage: ParseStage = ParseStage.RENDERING,
+        val pageIndex: Int = 0,
+        val pageCount: Int = 0
     ) : FormUiState
 
     /**
@@ -50,7 +55,9 @@ sealed interface FormUiState {
         val fields: List<FormField>,
         val documents: List<RequiredDocument>,
         val language: SupportedLanguage,
-        val isGenerating: Boolean = false
+        val isGenerating: Boolean = false,
+        /** Fields the parser could not place confidently; shown as manual-review notes. */
+        val warnings: List<String> = emptyList()
     ) : FormUiState
 
     /**

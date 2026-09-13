@@ -141,7 +141,7 @@ fun Role4HarnessScreen(
             }
 
             is FormUiState.Parsing -> {
-                Text("Processing: ${state.stageMessage}")
+                Text("Processing: ${state.stage} (page ${state.pageIndex + 1} of ${state.pageCount})")
             }
 
             is FormUiState.Questioning -> {
