@@ -12,13 +12,18 @@ enum class OcrScript {
     DEVANAGARI
 }
 
-class MlKitOcrEngine {
+class MlKitOcrEngine : AutoCloseable {
     private val latinRecognizer = TextRecognition.getClient(
         TextRecognizerOptions.DEFAULT_OPTIONS
     )   
     private val devanagariRecognizer = TextRecognition.getClient(
         DevanagariTextRecognizerOptions.Builder().build()
     )
+
+    override fun close() {
+        latinRecognizer.close()
+        devanagariRecognizer.close()
+    }
 
     suspend fun recognize(
         bitmap: Bitmap,

@@ -55,13 +55,10 @@ class VoiceControllerTest {
 
 
 
-        controller.stopListening {
-
-            println(
-                "VOICE RESULT = $it"
-            )
-
+        val transcript = kotlinx.coroutines.runBlocking {
+            controller.stopListening(com.formsaathi.model.SupportedLanguage.ENGLISH)
         }
+        org.junit.Assert.assertTrue(transcript.isNotBlank())
 
 
 
@@ -69,7 +66,7 @@ class VoiceControllerTest {
 
 
 
-        controller.release()
+        controller.close()
 
     }
 }

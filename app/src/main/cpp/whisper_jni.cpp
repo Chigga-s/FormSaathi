@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <string>
+#include <unistd.h>
 
 #include "whisper.h"
 
@@ -80,7 +81,8 @@ Java_com_formsaathi_voice_WhisperBridge_transcribe(
         JNIEnv *env,
         jobject,
         jlong handle,
-        jfloatArray audioArray
+        jfloatArray audioArray,
+        jstring language
 ) {
 
 
@@ -98,9 +100,8 @@ Java_com_formsaathi_voice_WhisperBridge_transcribe(
 
     if(ctx == nullptr) {
 
-        return env->NewStringUTF(
-                "CTX NULL"
-        );
+        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), "Model is not loaded");
+        return nullptr;
     }
 
 
@@ -135,12 +136,16 @@ Java_com_formsaathi_voice_WhisperBridge_transcribe(
 
 
 
-    params.language = "auto";
+    const char *languageCode = env->GetStringUTFChars(language, nullptr);
+    params.language = languageCode;
     params.translate = false;
 
     params.print_progress = false;
     params.print_realtime = false;
-    params.n_threads = 2; // Default limit for threads
+    int onlineCores = (int) sysconf(_SC_NPROCESSORS_ONLN);
+    if (onlineCores < 1) onlineCores = 2;
+    if (onlineCores > 8) onlineCores = 8;
+    params.n_threads = onlineCores;
 
 
 
@@ -179,11 +184,12 @@ Java_com_formsaathi_voice_WhisperBridge_transcribe(
 
 
 
+    env->ReleaseStringUTFChars(language, languageCode);
+
     if(ret != 0) {
 
-        return env->NewStringUTF(
-                "WHISPER FAILED"
-        );
+        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), "Whisper inference failed");
+        return nullptr;
     }
 
 
@@ -265,7 +271,7 @@ Java_com_formsaathi_voice_WhisperBridge_version(
 
 
     return env->NewStringUTF(
-            whisper_version()
+            whisper_print_system_info()
     );
 }
 

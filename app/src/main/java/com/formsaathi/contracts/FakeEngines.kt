@@ -362,9 +362,10 @@ class FakeCompletedPdfGenerator : CompletedPdfGenerator {
         parsedForm: ParsedForm,
         answers: Map<String, FormAnswer>,
         outputUri: Uri
-    ) {
+    ): com.formsaathi.model.GenerationResult {
         wasGenerateCalled = true
         lastSourceUri = sourceUri
         lastAnswersCount = answers.size
+        return com.formsaathi.model.GenerationResult(emptyList())
     }
 }

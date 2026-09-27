@@ -1,0 +1,32 @@
+{
+  "form": "FormSaathi_Test_Form_1_Simple.pdf",
+  "note": "Synthetic single-column test form bundled for OCR/parser validation.",
+  "pages": 1,
+  "minUsefulFields": 8,
+  "exactFieldCount": 15,
+  "expectedWarnings": 0,
+  "excludedNoise": "Titles, instructions, section headers, footers and document bullets never become questions",
+  "expectedTypesInOrder": [
+    "FULL_NAME",
+    "FATHER_NAME",
+    "MOTHER_NAME",
+    "DATE_OF_BIRTH",
+    "GENDER",
+    "MOBILE",
+    "EMAIL",
+    "AADHAAR",
+    "PERMANENT_ADDRESS",
+    "CURRENT_ADDRESS",
+    "STATE",
+    "DISTRICT",
+    "PINCODE",
+    "CATEGORY",
+    "ANNUAL_INCOME"
+  ],
+  "expectedDocuments": [
+    "Aadhaar Card",
+    "Income Certificate",
+    "PAN Card",
+    "Photograph"
+  ]
+}
